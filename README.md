@@ -3,7 +3,9 @@ By Yuxin Wen, Jiehong Lin, Ke Chen, C. L. Philip Chen, Kui Jia.
 
 ## Introdution
 This repository contains the implementation of our paper <https://arxiv.org/abs/1912.11171>.
+(This documentation is still under construction, please refer to our paper for more details)
 
+<!-- 
 ## Requirements
 * A computer running on Linux
 * NVIDIA GPU and NCCL
@@ -31,7 +33,7 @@ python defense.py --datadir Exps/PointNet_npoint1024/All/Pertub_0_BiStep10_IterS
 	--npoint 1024 --arch PointNet \
 	--defense_type outliers_fixNum --drop_num 128
 ```
-
+-->
 ## Citation
 If you use this method or this code in your paper, then please cite it:
 
