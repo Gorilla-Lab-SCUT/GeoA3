@@ -1,11 +1,11 @@
 {
     "spellright.language": [
-        "en"
+      "English (American)"
     ],
     "spellright.documentTypes": [
-        "markdown",
-        "latex",
-        "plaintext"
+      "markdown",
+      "latex",
+      "plaintext"
     ],
 
     "python.linting.pylintEnabled": true,
