@@ -33,7 +33,7 @@ parser.add_argument('-c', '--classes', default=40, type=int, metavar='N', help='
 parser.add_argument('-outc', '--out_classes', default=10, type=int, metavar='N', help='')
 parser.add_argument('-outn', '--max_out_num', default=25, type=int, metavar='N', help='')
 parser.add_argument('-j', '--num_workers', default=8, type=int, metavar='N', help='number of data loading workers (default: 8)')
-parser.add_argument('--npoints', default=1024, type=int, metavar='N', help='')
+parser.add_argument('--npoint', default=1024, type=int, metavar='N', help='')
 parser.add_argument('--dense_npoints', default=10000, type=int, metavar='N', help='')
 
 
@@ -125,10 +125,10 @@ def main():
     wo_normal = True
     using_virscan = False
     # model
-    model_path = os.path.join('Pretrained', cfg.arch, str(cfg.npoints), 'model_best.pth.tar')
+    model_path = os.path.join('Pretrained', cfg.arch, str(cfg.npoint), 'model_best.pth.tar')
     if cfg.arch == 'PointNet':
         from PointNet import PointNet
-        net = PointNet(cfg.classes, npoint=cfg.npoints).cuda()
+        net = PointNet(cfg.classes, npoint=cfg.npoint).cuda()
     elif cfg.arch == 'PointNetPP':
         from PointNetPP_msg import PointNet2ClassificationMSG
         net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
@@ -197,7 +197,7 @@ def main():
                 continue
 
             ori_points, ori_normal = read_off_lines(os.path.join(datadir, file_name))
-            points, normal = farthest_points_normalized(ori_points, cfg.npoints, ori_normal)
+            points, normal = farthest_points_normalized(ori_points, cfg.npoint, ori_normal)
             if cfg.dense_npoints>0:
                 dense_points, desne_normal = farthest_points_normalized(ori_points, cfg.dense_npoints, ori_normal)
             label = int(file_name.split('_')[1].split('.')[0])
@@ -233,7 +233,7 @@ def main():
     else:
         #data
         from modelnet_trn_test import ModelNetDataset
-        TEST_DATASET = ModelNetDataset(root=DATA_PATH, batch_size=1, npoints=cfg.npoints, split='test', normal_channel=True)
+        TEST_DATASET = ModelNetDataset(root=DATA_PATH, batch_size=1, npoints=cfg.npoint, split='test', normal_channel=True)
 
         i = 0
         while TEST_DATASET.has_next_batch():
@@ -307,7 +307,7 @@ def main():
         saved_dense_normal = torch.cat(save_dense_normal, 0).cpu().numpy()
     saved_label = torch.cat(saved_label, 0).cpu().numpy()
 
-    sio.savemat(os.path.join(cfg.out_datadir, 'modelnet' + str(cfg.out_classes) + '_' + str(saved_data.shape[0]) + 'instances' + str(cfg.npoints) + '_' + str(cfg.arch) + '.mat'), {"data": saved_data, 'normal': saved_normal, 'label': saved_label})
+    sio.savemat(os.path.join(cfg.out_datadir, 'modelnet' + str(cfg.out_classes) + '_' + str(saved_data.shape[0]) + 'instances' + str(cfg.npoint) + '_' + str(cfg.arch) + '.mat'), {"data": saved_data, 'normal': saved_normal, 'label': saved_label})
     if using_virscan & (cfg.dense_npoints>0):
         sio.savemat(os.path.join(cfg.out_datadir, 'modelnet' + str(cfg.out_classes) + '_' + str(saved_dense_data.shape[0]) + 'instances' + str(cfg.dense_npoints) + '_' + str(cfg.arch) + '.mat'), {"data": saved_dense_data, 'normal': saved_dense_normal, 'label': saved_label})
 

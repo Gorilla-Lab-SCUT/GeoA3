@@ -18,7 +18,7 @@ pip install Model/Pointnet2_PyTorch/pointnet2_ops_lib/.
 python main_train.py --datadir /data/modelnet40_normal_resampled/ --npoint 1024 --arch PointNetPP --epochs 200 \
 	--lr 0.001 --bn_momentum 0.5 -b 16
 
-python Provider/gen_data_mat.py --out_datadir ./Data -outc 10 -outn 25 --npoints 1024 --arch PointNetPP
+python Provider/gen_data_mat.py --out_datadir ./Data -outc 10 -outn 25 --npoint 1024 --arch PointNetPP
 
 python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNetPP.mat --npoint 1024 --arch PointNetPP \
 	--attack GeoA3 --attack_label All --binary_max_steps 10 --iter_max_steps 500 \
