@@ -127,13 +127,13 @@ def main():
     # model
     model_path = os.path.join('Pretrained', cfg.arch, str(cfg.npoints), 'model_best.pth.tar')
     if cfg.arch == 'PointNet':
-        from ..Model.PointNet import PointNet
+        from PointNet import PointNet
         net = PointNet(cfg.classes, npoint=cfg.npoints).cuda()
     elif cfg.arch == 'PointNetPP':
-        from ..Model.PointNetPP_msg import PointNet2ClassificationMSG
+        from PointNetPP_msg import PointNet2ClassificationMSG
         net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
     elif cfg.arch == 'DGCNN':
-        from ..Model.DGCNN import DGCNN_cls
+        from DGCNN import DGCNN_cls
         net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
     else:
         assert False
