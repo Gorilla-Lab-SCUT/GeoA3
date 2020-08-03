@@ -1,18 +1,17 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
+import argparse
 import os
 import sys
-import numpy as np
-import argparse
 import time
 
+import numpy as np
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
 import torch.optim as optim
+from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
+
 
 def random_drop_fn(pc, drop_num):
     n = pc.size(2)
@@ -67,14 +66,14 @@ def main():
     # model
     model_path = os.path.join('Pretrained', cfg.arch, str(cfg.npoint), 'model_best.pth.tar')
     if cfg.arch == 'PointNet':
-        from PointNet import PointNet
+        from Model.PointNet import PointNet
         net = PointNet(cfg.classes, npoint=cfg.npoint).cuda()
     elif cfg.arch == 'PointNetPP':
-        from PointNetPP_msg import PointNet2ClassificationMSG
+        from Model.PointNetPP_msg import PointNet2ClassificationMSG
         net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
     elif cfg.arch == 'DGCNN':
-        from DGCNN import DGCNN
-        net = DGCNN(cfg.classes).cuda()
+        from Model.DGCNN import DGCNN_cls
+        net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
     else:
         assert False, 'Not support such arch.'
 
@@ -148,8 +147,8 @@ if __name__ == '__main__':
     sys.path.append(os.path.join(ROOT_DIR, 'Model'))
     sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
     sys.path.append(os.path.join(ROOT_DIR, 'Provider'))
-    from defense_modelnet10_instance250 import ModelNet40
-    from loss_utils import *
+    from Provider.defense_modelnet10_instance250 import ModelNet40
+    from Lib.loss_utils import *
 
     parser = argparse.ArgumentParser(description='Point Cloud Defense')
     #------------Dataset-----------------------
