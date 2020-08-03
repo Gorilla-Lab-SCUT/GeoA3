@@ -1,11 +1,11 @@
 # Geometry-Aware Generation of Adversarial Point Clouds
 By Yuxin Wen, Jiehong Lin, Ke Chen, C. L. Philip Chen, Kui Jia.
 
-## Introdution
+## Introduction
 This repository contains the implementation of our paper <https://arxiv.org/abs/1912.11171>.
 (This documentation is still under construction, please refer to our paper for more details)
 
-<!-- 
+<!--
 ## Requirements
 * A computer running on Linux
 * NVIDIA GPU and NCCL

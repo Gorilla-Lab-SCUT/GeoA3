@@ -1,0 +1,5 @@
+pip install Model/pointnet2_ops_lib/.
+
+
+
+
