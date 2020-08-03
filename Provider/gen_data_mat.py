@@ -1,23 +1,21 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
-import os
-import sys
-import numpy as np
 import argparse
-import pprint
-import pdb
-import time
-import shutil
-import gc
-import scipy.io as sio
 import bisect
+import gc
+import os
+import pdb
+import pprint
+import shutil
+import sys
+import time
 
+import numpy as np
+import scipy.io as sio
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
 import torch.optim as optim
+from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -129,11 +127,14 @@ def main():
     # model
     model_path = os.path.join('Pretrained', cfg.arch, str(cfg.npoints), 'model_best.pth.tar')
     if cfg.arch == 'PointNet':
-        from PointNet import PointNet
+        from ..Model.PointNet import PointNet
         net = PointNet(cfg.classes, npoint=cfg.npoints).cuda()
     elif cfg.arch == 'PointNetPP':
-        from PointNetPP_msg import PointNet2ClassificationMSG
+        from ..Model.PointNetPP_msg import PointNet2ClassificationMSG
         net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
+    elif cfg.arch == 'DGCNN':
+        from ..Model.DGCNN import DGCNN_cls
+        net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
     else:
         assert False
 
