@@ -14,7 +14,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
-from ..Lib import loss_utils
+from ..Lib.loss_utils import *
 
 
 def _compare(output, target, gt, targeted):
@@ -307,7 +307,7 @@ def main():
 
     for i, input_data in enumerate(test_loader):
         print('[{0}/{1}]:'.format(i, test_loader.__len__()))
-        adv_pc, targeted_label, attack_success_indicator = attack(net, input_data, cfg)
+        adv_pc, targeted_label, attack_success_indicator = attack(net, input_data, cfg, i, len(test_loader))
         print(adv_pc.shape)
         break
     print('\n Finish! \n')
