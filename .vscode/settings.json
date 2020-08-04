@@ -13,6 +13,6 @@
     "python.linting.pylintArgs": [
       "--errors-only",
       "--generated-members=numpy.* ,torch.* ,cv2.* , cv.*, np.*",
-      "--init-hook", "import sys; sys.path.append('Model')"
+      "--init-hook", "import sys; sys.path.append('Model'); sys.path.append('Lib'); sys.path.append('Provider'); sys.path.append('Attacker')"
     ]
 }

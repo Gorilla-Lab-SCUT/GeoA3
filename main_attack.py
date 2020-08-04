@@ -248,7 +248,7 @@ def main():
             print("Prec@1 {top1.avg:.3f}".format(top1=test_acc))
 
         elif cfg.attack == 'GeoA3':
-            adv_pc, targeted_label, attack_success_indicator  = attack(net, data, cfg)
+            adv_pc, targeted_label, attack_success_indicator  = attack(net, data, cfg, i, len(test_loader))
             with torch.no_grad():
                 test_adv_var = Variable(adv_pc.clone())
                 test_adv_output = net(test_adv_var)

@@ -1,26 +1,21 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
+import argparse
+import math
 import os
 import sys
-import numpy as np
-import argparse
 import time
-import scipy.io as sio
-import math
 
+import numpy as np
+import scipy.io as sio
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
 import torch.optim as optim
+from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = BASE_DIR + '/../'
-sys.path.append(BASE_DIR)
-sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
-from loss_utils import *
+from ..Lib import loss_utils
+
 
 def _compare(output, target, gt, targeted):
     if targeted:
@@ -43,7 +38,7 @@ def _forward_step(net, pc_ori_var, input_var, normal_var, theta_normal_var, targ
 
         if targeted:
             # if targeted, optimize for making the other class most likely
-            cls_loss = torch.clamp(other - fake + cfg.confidence, min=0.)  # equiv to max(..., 0.)            
+            cls_loss = torch.clamp(other - fake + cfg.confidence, min=0.)  # equiv to max(..., 0.)
         else:
             # if non-targeted, optimize for making this class least likely.
             cls_loss = torch.clamp(fake - other + cfg.confidence, min=0.)  # equiv to max(..., 0.)
@@ -64,12 +59,12 @@ def _forward_step(net, pc_ori_var, input_var, normal_var, theta_normal_var, targ
 
     if cfg.dis_loss_type == 'CD':
         if cfg.is_cd_single_side:
-            dis_loss = intra_dis.min(2)[0].mean(1) 
+            dis_loss = intra_dis.min(2)[0].mean(1)
         else:
             dis_loss = intra_dis.min(2)[0].mean(1) + intra_dis.min(1)[0].mean(1)
 
         constrain_loss = cfg.dis_loss_weight * dis_loss
-        info = info + 'cd_loss: {0:6.4f}\t'.format(dis_loss.mean().item())  
+        info = info + 'cd_loss: {0:6.4f}\t'.format(dis_loss.mean().item())
     elif cfg.dis_loss_type == 'L2':
         assert cfg.hd_loss_weight ==0
         dis_loss = ((input_var - pc_ori_var)**2).sum(1).mean(1)
@@ -109,10 +104,10 @@ def _forward_step(net, pc_ori_var, input_var, normal_var, theta_normal_var, targ
 
     return output_var, loss, dis_loss, hd_loss, curv_loss, constrain_loss, info
 
-def attack(net, input_data, cfg):
-    #needed cfg:[arch, classes, attack_label, initial_const, lr, optim, binary_max_steps, iter_max_steps, metric, 
-    #  cls_loss_type, confidence, dis_loss_type, is_cd_single_side, dis_loss_weight, hd_loss_weight, curv_loss_weight, curv_loss_knn, 
-    #  is_pre_jitter_input, calculate_project_jitter_noise_iter, jitter_k, jitter_sigma, jitter_clip, 
+def attack(net, input_data, cfg, i, loader_len):
+    #needed cfg:[arch, classes, attack_label, initial_const, lr, optim, binary_max_steps, iter_max_steps, metric,
+    #  cls_loss_type, confidence, dis_loss_type, is_cd_single_side, dis_loss_weight, hd_loss_weight, curv_loss_weight, curv_loss_knn,
+    #  is_pre_jitter_input, calculate_project_jitter_noise_iter, jitter_k, jitter_sigma, jitter_clip,
     #  is_save_normal,
     #  ]
 
@@ -213,7 +208,7 @@ def attack(net, input_data, cfg):
                 input_var.grad = input_var_curr_iter.grad
             optimizer.step()
 
-            info = '[{0}/{1}][{2}/{3}] \t loss: {4:6.4f}\t'.format(search_step+1, cfg.binary_max_steps, step+1, cfg.iter_max_steps, loss.item()) + info
+            info = '[{5}/{6}][{0}/{1}][{2}/{3}] \t loss: {4:6.4f}\t'.format(search_step+1, cfg.binary_max_steps, step+1, cfg.iter_max_steps, loss.item(), i, loader_len) + info
 
             if (step+1) % step_print_freq == 0 or step == cfg.iter_max_steps - 1:
                 print(info)
@@ -275,6 +270,9 @@ def main():
     parser.add_argument('--is_save_normal', action='store_true', default=False, help='')
     cfg  = parser.parse_args()
 
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    ROOT_DIR = BASE_DIR + '/../'
+    sys.path.append(BASE_DIR)
     sys.path.append(os.path.join(ROOT_DIR, 'Model'))
     sys.path.append(os.path.join(ROOT_DIR, 'Provider'))
     #data
@@ -283,7 +281,7 @@ def main():
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=cfg.batch_size, shuffle=False, drop_last=False, num_workers=cfg.num_workers, pin_memory=True)
     test_size = test_dataset.__len__()
     if cfg.dense_data_dir_file != '':
-        from modelnet_pure import ModelNet_pure 
+        from modelnet_pure import ModelNet_pure
         dense_test_dataset = ModelNet_pure(data_mat_file=cfg.dense_data_dir_file)
         dense_test_loader = torch.utils.data.DataLoader(dense_test_dataset, batch_size=cfg.batch_size, shuffle=False, drop_last=False, num_workers=cfg.num_workers, pin_memory=True)
     else:
@@ -308,7 +306,7 @@ def main():
         os.makedirs(trg_dir)
 
     for i, input_data in enumerate(test_loader):
-        print('[{0}/{1}]:'.format(i, loader.__len__()))
+        print('[{0}/{1}]:'.format(i, test_loader.__len__()))
         adv_pc, targeted_label, attack_success_indicator = attack(net, input_data, cfg)
         print(adv_pc.shape)
         break
@@ -316,4 +314,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()  
+    main()
