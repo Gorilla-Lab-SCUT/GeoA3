@@ -14,8 +14,12 @@ import torch.optim as optim
 from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
-from ..Lib.loss_utils import *
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = BASE_DIR + '/../'
+sys.path.append(BASE_DIR)
+sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
+from loss_utils import *
 
 def _compare(output, target, gt, targeted):
     if targeted:
@@ -270,9 +274,6 @@ def main():
     parser.add_argument('--is_save_normal', action='store_true', default=False, help='')
     cfg  = parser.parse_args()
 
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    ROOT_DIR = BASE_DIR + '/../'
-    sys.path.append(BASE_DIR)
     sys.path.append(os.path.join(ROOT_DIR, 'Model'))
     sys.path.append(os.path.join(ROOT_DIR, 'Provider'))
     #data
