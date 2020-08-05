@@ -184,8 +184,10 @@ def main():
         from Model.PointNet import PointNet
         net = PointNet(cfg.classes, npoint=cfg.npoint).cuda()
     elif cfg.arch == 'PointNetPP':
-        from Model.PointNetPP_msg import PointNet2ClassificationMSG
-        net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
+        #from Model.PointNetPP_msg import PointNet2ClassificationMSG
+        #net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
+        from Model.PointNetPP_ssg import PointNet2ClassificationSSG
+        net = PointNet2ClassificationSSG(use_xyz=True, use_normal=False).cuda()
     elif cfg.arch == 'DGCNN':
         from Model.DGCNN import DGCNN_cls
         net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
@@ -212,7 +214,7 @@ def main():
         targeted = True
 
     for i, data in enumerate(test_loader):
-        print('[{0}/{1}]:'.format(i, test_loader.__len__()), end='')
+        #print('[{0}/{1}]:'.format(i, test_loader.__len__()), end='')
         pc = data[0]
         normal = data[1]
         gt_labels = data[2]

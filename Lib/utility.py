@@ -16,9 +16,127 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn
 
+
+def _normalize(input, p=2, dim=1, eps=1e-12):
+    return input / input.norm(p, dim, keepdim=True).clamp(min=eps).expand_as(input)
+
+
+def compute_theta_normal(pc, normal, k):
+    b,_,n=pc.size()
+    inter_dis = ((pc.unsqueeze(3) - pc.unsqueeze(2))**2).sum(1)
+    inter_idx = torch.topk(inter_dis, k+1, dim=2, largest=False, sorted=True)[1][:, :, 1:].contiguous()
+    nn_pts = torch.gather(pc, 2, inter_idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)
+    vectors = nn_pts - pc.unsqueeze(3)
+    vectors = _normalize(vectors)
+
+    return torch.abs((vectors*normal.unsqueeze(3)).sum(1)).mean(2) #b*n
+
+def jitter_input(data, sigma=0.01, clip=0.05):
+    assert data.size(1) == 3
+    assert(clip > 0)
+    B, _, N = data.size()
+    jittered_data = torch.clamp(sigma * torch.randn(B, 3, N), -1*clip, clip).cuda()
+    return jittered_data
+
+def estimate_normal(pc, k):
+    with torch.no_grad():
+        # pc : [b, 3, n]
+        b,_,n=pc.size()
+        # get knn point set matrix
+        dis = ((pc.unsqueeze(3) - pc.unsqueeze(2) + 1e-12)**2).sum(1).sqrt()
+        dis, idx = torch.topk(dis, k+1, dim=2, largest=False, sorted=True)
+        idx = idx[:, :, 1:].contiguous()    #idx:[b, n, k]
+        nn_pts = torch.gather(pc, 2, idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)   #nn_pts:[b, 3, n, k]
+        # get covariance matrix and smallest eig-vector of individual point
+        normal_vector = []
+        for i in range(b):
+            if int(torch.__version__.split('.')[1])>=4:
+                curr_point_set = nn_pts[i].detach().permute(1,0,2) #curr_point_set:[n, 3, k]
+                curr_point_set_mean = torch.mean(curr_point_set, dim=2, keepdim=True) #curr_point_set_mean:[n, 3, 1]
+                curr_point_set = curr_point_set - curr_point_set_mean #curr_point_set:[n, 3, k]
+                curr_point_set_t = curr_point_set.permute(0,2,1) #curr_point_set_t:[n, k, 3]
+                fact = 1.0 / (k-1)
+                cov_mat = fact * torch.bmm(curr_point_set, curr_point_set_t) #curr_point_set_t:[n, 3, 3]
+                eigenvalue, eigenvector=torch.symeig(cov_mat, eigenvectors=True)    # eigenvalue:[n, 3], eigenvector:[n, 3, 3]
+                persample_normal_vector = torch.gather(eigenvector, 2, torch.argmin(eigenvalue, dim=1).unsqueeze(1).unsqueeze(2).expand(n, 3, 1)).squeeze() #persample_normal_vector:[n, 3]
+
+                #recorrect the direction via neighbour direction
+                nbr_sum = curr_point_set.sum(dim=2)  #curr_point_set:[n, 3]
+                sign = -torch.sign(torch.bmm(persample_normal_vector.view(n, 1, 3), nbr_sum.view(n, 3, 1))).squeeze(2)
+                persample_normal_vector = sign * persample_normal_vector
+
+                normal_vector.append(persample_normal_vector.permute(1,0))
+
+            else:
+                persample_normal_vector = []
+                for j in range(n):
+                    curr_point_set = nn_pts[i,:,j,:].cpu()
+                    curr_point_set_np = curr_point_set.detach().numpy()#curr_point_set_np:[3,k]
+                    cov_mat_np = np.cov(curr_point_set_np)   #cov_mat:[3,3]
+                    eigenvalue_np, eigenvector_np=np.linalg.eig(cov_mat_np)   #eigenvalue:[3], eigenvector:[3,3]; note that v[:,i] is the eigenvector corresponding to the eigenvalue w[i].
+                    curr_normal_vector_np = torch.from_numpy(eigenvector_np[:,np.argmin(eigenvalue_np)]) #curr_normal_vector:[3]
+                    persample_normal_vector.append(curr_normal_vector_np)
+                persample_normal_vector = torch.stack(persample_normal_vector, 1)
+
+                #recorrect the direction via neighbour direction
+                nbr_sum = curr_point_set.sum(dim=1)  #curr_point_set:[3]
+                sign = -torch.sign(torch.bmm(persample_normal_vector.view(1, 3), nbr_sum.view(3, 1))).squeeze(1)
+                persample_normal_vector = sign * persample_normal_vector
+
+                normal_vector.append(persample_normal_vector.permute(1,0))
+
+                normal_vector.append(persample_normal_vector)
+
+        normal_vector = torch.stack(normal_vector, 0) #normal_vector:[b, 3, n]
+    return normal_vector.float()
+
+def get_perpendicular_jitter(vector, sigma=0.01, clip=0.05):
+    b,_,n=vector.size()
+    aux_vector1 = sigma * torch.randn(b,3,n).cuda()
+    aux_vector2 = sigma * torch.randn(b,3,n).cuda()
+    return torch.clamp(torch.cross(vector, aux_vector1), -1*clip, clip) + torch.clamp(torch.cross(vector, aux_vector2), -1*clip, clip)
+
+def estimate_perpendicular(pc, k, sigma=0.01, clip=0.05):
+    with torch.no_grad():
+        # pc : [b, 3, n]
+        b,_,n=pc.size()
+        # get knn point set matrix
+        dis = ((pc.unsqueeze(3) - pc.unsqueeze(2) + 1e-12)**2).sum(1).sqrt()
+        dis, idx = torch.topk(dis, k+1, dim=2, largest=False, sorted=True)
+        idx = idx[:, :, 1:].contiguous()    #idx:[b, n, k]
+        nn_pts = torch.gather(pc, 2, idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)   #nn_pts:[b, 3, n, k]
+        # get covariance matrix and smallest eig-vector of individual point
+        perpendi_vector_1 = []
+        perpendi_vector_2 = []
+        for i in range(b):
+            curr_point_set = nn_pts[i].detach().permute(1,0,2) #curr_point_set:[n, 3, k]
+            curr_point_set_mean = torch.mean(curr_point_set, dim=2, keepdim=True) #curr_point_set_mean:[n, 3, 1]
+            curr_point_set = curr_point_set - curr_point_set_mean #curr_point_set:[n, 3, k]
+            curr_point_set_t = curr_point_set.permute(0,2,1) #curr_point_set_t:[n, k, 3]
+            fact = 1.0 / (k-1)
+            cov_mat = fact * torch.bmm(curr_point_set, curr_point_set_t) #curr_point_set_t:[n, 3, 3]
+            eigenvalue, eigenvector=torch.symeig(cov_mat, eigenvectors=True)    # eigenvalue:[n, 3], eigenvector:[n, 3, 3]
+
+            larger_dim_idx = torch.topk(eigenvalue, 2, dim=1, largest=True, sorted=False, out=None)[1] # eigenvalue:[n, 2]
+
+            persample_perpendi_vector_1 = torch.gather(eigenvector, 2, larger_dim_idx[:,0].unsqueeze(1).unsqueeze(2).expand(n, 3, 1)).squeeze() #persample_perpendi_vector_1:[n, 3]
+            persample_perpendi_vector_2 = torch.gather(eigenvector, 2, larger_dim_idx[:,1].unsqueeze(1).unsqueeze(2).expand(n, 3, 1)).squeeze() #persample_perpendi_vector_2:[n, 3]
+
+            perpendi_vector_1.append(persample_perpendi_vector_1.permute(1,0))
+            perpendi_vector_2.append(persample_perpendi_vector_2.permute(1,0))
+
+        perpendi_vector_1 = torch.stack(perpendi_vector_1, 0) #perpendi_vector_1:[b, 3, n]
+        perpendi_vector_2 = torch.stack(perpendi_vector_2, 0) #perpendi_vector_1:[b, 3, n]
+
+        aux_vector1 = sigma * torch.randn(b,n).unsqueeze(1).cuda() #aux_vector1:[b, 1, n]
+        aux_vector2 = sigma * torch.randn(b,n).unsqueeze(1).cuda() #aux_vector2:[b, 1, n]
+
+    return torch.clamp(perpendi_vector_1*aux_vector1, -1*clip, clip) + torch.clamp(perpendi_vector_2*aux_vector2, -1*clip, clip)
+
+
+
 _, term_width = os.popen('stty size', 'r').read().split()
 term_width = int(term_width)
-
 TOTAL_BAR_LENGTH = 30.
 last_time = time.time()
 begin_time = last_time
@@ -99,67 +217,6 @@ def format_time(seconds):
         f = '0ms'
     return f
 
-def normalize_inverse(input_imgs, dataset_type = 'CIFAR10'):
-    if isinstance(input_imgs, Variable):
-        imgs = copy.deepcopy(input_imgs.data)
-    else:
-        imgs = copy.deepcopy(input_imgs)
-    if dataset_type == 'CIFAR10' or dataset_type == 'Sep_CIFAR10' or dataset_type == 'Bi_CIFAR10':
-        imgs[:,0,:,:] = imgs[:,0,:,:] * (63.0/255.0) + (125.3/255.0)
-        imgs[:,1,:,:] = imgs[:,1,:,:] * (62.1/255.0) + (123.0/255.0)
-        imgs[:,2,:,:] = imgs[:,2,:,:] * (66.7/255.0) + (113.9/255.0)
-    elif dataset_type == 'ImageNet' or dataset_type == 'tiny_ImageNet' or dataset_type == 'SBD':
-        imgs[:,0,:,:] = imgs[:,0,:,:] * 0.229 + 0.485
-        imgs[:,1,:,:] = imgs[:,1,:,:] * 0.224 + 0.456
-        imgs[:,2,:,:] = imgs[:,2,:,:] * 0.225 + 0.406
-    else:
-        raise Exception('DO NOT support inverse-normalizing such dataset yet!')
-    return imgs
-
-def normalize(input_imgs, dataset_type = 'CIFAR10'):
-    if isinstance(input_imgs, Variable):
-        imgs = copy.deepcopy(input_imgs.data)
-    else:
-        imgs = copy.deepcopy(input_imgs)
-    if dataset_type == 'CIFAR10' or dataset_type == 'Sep_CIFAR10' or dataset_type == 'Bi_CIFAR10':
-        imgs[:,0,:,:] = (imgs[:,0,:,:] - (125.3/255.0)) / (63.0/255.0)
-        imgs[:,1,:,:] = (imgs[:,1,:,:] - (123.0/255.0)) / (62.1/255.0)
-        imgs[:,2,:,:] = (imgs[:,2,:,:] - (113.9/255.0)) / (66.7/255.0)
-    elif dataset_type == 'ImageNet' or dataset_type == 'tiny_ImageNet' or dataset_type == 'SBD':
-        imgs[:,0,:,:] = (imgs[:,0,:,:] - 0.485) / 0.229
-        imgs[:,1,:,:] = (imgs[:,1,:,:] - 0.456) / 0.224
-        imgs[:,2,:,:] = (imgs[:,2,:,:] - 0.406) / 0.225
-    else:
-        raise Exception('DO NOT support normalizing such dataset yet!')
-    return imgs
-
-def normalize_epsilon(epsilon_ori, dataset_type = 'CIFAR10', norm_type = 'interval'):
-    assert epsilon_ori.size(0) == 3
-    epsilon = copy.deepcopy(epsilon_ori)
-    if norm_type == 'interval':
-        if dataset_type == 'CIFAR10' or dataset_type == 'Sep_CIFAR10' or dataset_type == 'Bi_CIFAR10':
-            epsilon[0] = (epsilon[0] / (63.0/255.0))
-            epsilon[1] = (epsilon[1] / (62.1/255.0))
-            epsilon[2] = (epsilon[2] / (66.7/255.0))
-        elif dataset_type == 'ImageNet' or dataset_type == 'tiny_ImageNet' or dataset_type == 'SBD':
-            epsilon[0] = (epsilon[0] / 0.229)
-            epsilon[1] = (epsilon[1] / 0.224)
-            epsilon[2] = (epsilon[2] / 0.225)
-        else:
-            raise Exception('DO NOT support normalizing such epsilon yet!')
-    elif norm_type == 'value':
-        if dataset_type == 'CIFAR10' or dataset_type == 'Sep_CIFAR10' or dataset_type == 'Bi_CIFAR10':
-            epsilon[0] = (epsilon[0] - (125.3/255.0)) / (63.0/255.0)
-            epsilon[1] = (epsilon[1] - (123.0/255.0)) / (62.1/255.0)
-            epsilon[2] = (epsilon[2] - (113.9/255.0)) / (66.7/255.0)
-        elif dataset_type == 'ImageNet' or dataset_type == 'tiny_ImageNet' or dataset_type == 'SBD':
-            epsilon[0] = (epsilon[0] - 0.485) / 0.229
-            epsilon[1] = (epsilon[1] - 0.456) / 0.224
-            epsilon[2] = (epsilon[2] - 0.406) / 0.225        
-        else:
-            raise Exception('DO NOT support normalizing such epsilon yet!')
-    return epsilon
-
 class Average_meter(object):
     """Computes and stores the average and current value"""
     def __init__(self):
@@ -177,48 +234,6 @@ class Average_meter(object):
         self.count += n
         self.avg = self.sum / self.count
 
-class Img_show(object):
-    """show image"""  
-    def __init__(self, fsave, show_time = 1):
-        self.time = show_time
-        self.fsave = fsave
-        if not os.path.exists(self.fsave):
-            os.makedirs(self.fsave)
-
-    def close(self):
-        time.sleep(self.time)
-        plt.close()
-
-    def imshow_ImageNet(self, imgs, fname = 'showed_img'):
-        assert imgs.size().__len__() == 4
-        if isinstance(imgs, Variable):
-            imgs = imgs.data
-        imgs_show = []
-        for i in range(0, imgs.size(0)):
-            img_show = imgs.cpu()[i].clone()
-            img_show[0] = img_show[0] * 0.229 + 0.485    # unnormalize
-            img_show[1] = img_show[1] * 0.224 + 0.456     # unnormalize
-            img_show[2] = img_show[2] * 0.225 + 0.406     # unnormalize
-            imgs_show.append(img_show)
-        imgs_show = torchvision.utils.make_grid(imgs_show)
-        fpath = os.path.join(self.fsave, fname) + '.png'
-        torchvision.utils.save_image(imgs_show, fpath)
-
-    def imshow_CIFAR10(self, imgs, fname = 'showed_img'):
-        assert imgs.size().__len__() == 4
-        if isinstance(imgs, Variable):
-            imgs = imgs.data
-        imgs_show = []
-        for i in range(0, imgs.size(0)):
-            img_show = imgs[i].cpu().clone()
-            img_show[0] = img_show[0] * (63.0/255.0) + (125.3/255.0)     # unnormalize
-            img_show[1] = img_show[1] * (62.1/255.0) + (123.0/255.0)     # unnormalize
-            img_show[2] = img_show[2] * (66.7/255.0) + (113.9/255.0)     # unnormalize
-            imgs_show.append(img_show)
-        imgs_show = torchvision.utils.make_grid(imgs_show)
-        fpath = os.path.join(self.fsave, fname) + '.png'
-        torchvision.utils.save_image(imgs_show, fpath)
-
 class Training_aux(object):
     def __init__(self, fsave):
         self.fsave = fsave
@@ -226,7 +241,7 @@ class Training_aux(object):
             os.makedirs(self.fsave)
     def save_checkpoint(self, state, is_best, filename='checkpoint.pth.tar'):
         """Saves checkpoint to disk"""
-        ''' 
+        '''
         usage:
         Training_aux.save_checkpoint(
             state = {
@@ -240,11 +255,11 @@ class Training_aux(object):
         torch.save(state, filename)
         if is_best:
             shutil.copyfile(filename, '%s/'%(self.fsave) + 'modelBest.pth.tar')
-        return 
+        return
 
     def load_checkpoint(self, model, optimizer, is_best):
         """Loads checkpoint from disk"""
-        ''' 
+        '''
         usage:
         start_epoch, best_prec1 = Training_aux.load_checkpoint(model = model, is_best = is_best)
         '''
@@ -291,113 +306,4 @@ class Training_aux(object):
         file.write(info)
 
         file.close()
-        return 
-
-    def plt_curve(self, x, y, label, x_axis, y_axis, tile, save_name):
-        fpath = os.path.join(self.fsave, save_name+'.png')
-
-        seaborn.set()
-        seaborn.set(rc={'figure.figsize':(11.7000,8.27000)})
-        linewidth = 4.0
-        fontsize = 15.0
-        markersize = 10.0
-        color_list = ['r','b','g']
-
-        f, ax = plt.subplots()
-        ax.plot(x,y,color=color_list[0], linewidth=linewidth, markersize=markersize, label=label)
-
-        ax.set_xlabel(x_axis, fontsize=fontsize)
-        ax.set_ylabel(y_axis, fontsize=fontsize)
-        ax.set_title(tile, fontsize=fontsize+5)
-
-        ax.tick_params(labelsize=fontsize)
-        ax.legend(fontsize=fontsize)
-        plt.savefig(fpath)
-        plt.close()
-
-    def plt_hist(self, y, label, x_axis, y_axis='Number of Values', tile='Histogram', save_name='Hist', kde=True, bins=50):
-        fpath = sos.path.join(self.fsave, save_name+'.png')
-
-        seaborn.set()
-        seaborn.set(rc={'figure.figsize':(11.7000,8.27000)})
-        linewidth = 4.0
-        fontsize = 15.0
-        markersize = 10.0
-        color_list = ['r','b','g']
-
-        f, ax = plt.subplots()
-        seaborn.distplot(y, kde=kde, bins=bins, color=color_list[0], label=label, ax=ax)
-
-        ax.set_xlabel(x_axis, fontsize=fontsize)
-        ax.set_ylabel(y_axis, fontsize=fontsize)
-        ax.set_title(tile, fontsize=fontsize+5)
-
-        ax.tick_params(labelsize=fontsize)
-        ax.legend(fontsize=fontsize)
-        plt.savefig(fpath)
-        plt.close()
-
-
-    def plt_weight(self, weight, padding=1, save_name='Vis_heatmap'):
-        assert weight.size().__len__() == 4
-        if isinstance(weight, Variable):
-            weight = weight.data
-        if weight.size().__len__() == 4:
-            c_out = weight.size(0)
-            c_in = weight.size(1)
-            kw = weight.size(2)
-            kh = weight.size(3)
-
-            to_plot_weight = c_in * (kw+padding) - padding
-            to_plot_height = c_out * (kh+padding) - padding
-
-            out_img = np.ones((to_plot_height, to_plot_weight)) * 0
-            h_offset = 0
-            for out_idx in range(0, c_out):
-                w_offset = 0
-                for in_idx in range(0, c_in):
-                    out_img[out_idx*kh + h_offset:(out_idx+1)*kh + h_offset, in_idx*kw + w_offset: (in_idx+1)*kw + w_offset] = weight[out_idx, in_idx, :, :].cpu().numpy()
-                    w_offset += 1
-                h_offset += 1
-
-        fpath = os.path.join(self.fsave, save_name+'.png')
-        seaborn.set()
-        seaborn.set(rc={'figure.figsize':(11.7000,8.27000)})
-
-        f, ax = plt.subplots()
-        seaborn.heatmap(data=out_img, center=0, xticklabels=False, yticklabels=False, square=True, robust=True,)
-
-        plt.savefig(fpath)
-        plt.close()
-
-    def get_heatmap_figure_multiC(self, featuremap, padding=1, aggregate=False, vmax=1):
-        assert featuremap.size().__len__() == 3
-        if isinstance(featuremap, Variable):
-            featuremap = featuremap.data
-        seaborn.set('poster')
-        if aggregate == True:
-            channel = featuremap.size(0)
-            fw = featuremap.size(1)
-            fh = featuremap.size(2)
-
-            to_plot_width = channel * (fw+padding) - padding
-            to_plot_height = fh
-            out_img = np.ones((to_plot_height, to_plot_width)) * 0.5
-
-            w_offset = 0
-            for in_idx in range(0, channel):
-                out_img[0:fh, in_idx*fw + w_offset: (in_idx+1)*fw + w_offset] = featuremap[in_idx, :, :].cpu().numpy()
-                w_offset += 1
-
-            f, ax = plt.subplots()
-            seaborn.heatmap(data=out_img, vmin=0, vmax=vmax, xticklabels=False, yticklabels=False, square=True, robust=True,)
-            return f
-        else:
-            f_list = []
-            channel = featuremap.size(0)
-            for in_idx in range(0, channel):
-                f, ax = plt.subplots()
-                seaborn.heatmap(data=featuremap[in_idx, :, :].cpu().numpy(), vmin=0, vmax=vmax, xticklabels=False, yticklabels=False, square=True, robust=True,)
-                f_list.append(f)
-                plt.close()
-            return f_list
+        return

@@ -19,7 +19,8 @@ ROOT_DIR = BASE_DIR + '/../'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
-from loss_utils import *
+from utility import compute_theta_normal, estimate_perpendicular
+from loss_utils import norm_l2_loss, chamfer_loss, hausdorff_loss, normal_loss
 
 def _compare(output, target, gt, targeted):
     if targeted:
@@ -90,7 +91,7 @@ def _forward_step(net, pc_ori_var, input_var, normal_var, theta_normal_var, targ
 
     # nor loss
     if cfg.curv_loss_weight !=0:
-        curv_loss,_ = NormalLoss(input_var, pc_ori_var, normal_var, None, cfg.curv_loss_knn)
+        curv_loss,_ = normal_loss(input_var, pc_ori_var, normal_var, None, cfg.curv_loss_knn)
 
         intra_dis = ((input_var.unsqueeze(3) - pc_ori_var.unsqueeze(2))**2).sum(1)
         intra_idx = torch.topk(intra_dis, 1, dim=2, largest=False, sorted=True)[1]
@@ -145,7 +146,7 @@ def attack(net, input_data, cfg, i, loader_len):
         target = input_data[3].view(-1).cuda()
 
     if cfg.curv_loss_weight !=0:
-        theta_normal_var = ComputeThetaNormal(pc_ori_var, normal_var, cfg.curv_loss_knn)
+        theta_normal_var = compute_theta_normal(pc_ori_var, normal_var, cfg.curv_loss_knn)
     else:
         theta_normal_var = None
 
@@ -276,6 +277,7 @@ def main():
 
     sys.path.append(os.path.join(ROOT_DIR, 'Model'))
     sys.path.append(os.path.join(ROOT_DIR, 'Provider'))
+
     #data
     from modelnet10_instance250 import ModelNet40
     test_dataset = ModelNet40(data_mat_file=cfg.data_dir_file, attack_label=cfg.attack_label, resample_num=-1)
@@ -287,6 +289,7 @@ def main():
         dense_test_loader = torch.utils.data.DataLoader(dense_test_dataset, batch_size=cfg.batch_size, shuffle=False, drop_last=False, num_workers=cfg.num_workers, pin_memory=True)
     else:
         dense_test_loader = None
+
     #model
     from PointNet import PointNet
     net = PointNet(cfg.classes, npoint=cfg.npoint).cuda()
