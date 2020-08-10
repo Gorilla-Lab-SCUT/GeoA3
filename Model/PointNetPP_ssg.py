@@ -55,15 +55,19 @@ class PointNet2ClassificationSSG(nn.Module):
         self.use_xyz = use_xyz
         self.use_normal = use_normal
         self._build_model()
-
     def _build_model(self):
+        if self.use_normal:
+            ori_channel = 3
+        else:
+            ori_channel = 0
+
         self.SA_modules = nn.ModuleList()
         self.SA_modules.append(
             PointnetSAModule(
                 npoint=512,
                 radius=0.2,
                 nsample=64,
-                mlp=[3, 64, 64, 128],
+                mlp=[ori_channel, 64, 64, 128],
                 use_xyz=self.use_xyz,
             )
         )
@@ -121,8 +125,8 @@ class PointNet2ClassificationSSG(nn.Module):
 
     def adjust_bn_momentum(self, epoch, bn_momentum):
         bn_lbmd = lambda _: max(
-            bn_momentum * (0.5** (epoch // 20)),  
+            bn_momentum * (0.5** (epoch // 20)),
             bnm_clip,
-        ) 
+        )
 
         bnm_scheduler = BNMomentumScheduler(self, bn_lambda=bn_lbmd)
