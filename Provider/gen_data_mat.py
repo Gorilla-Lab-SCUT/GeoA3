@@ -22,7 +22,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.split(BASE_DIR)[0]
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'Model'))
-sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
 
 parser = argparse.ArgumentParser(description='Point Cloud Attacking')
@@ -34,6 +33,7 @@ parser.add_argument('-outc', '--out_classes', default=10, type=int, metavar='N',
 parser.add_argument('-outn', '--max_out_num', default=25, type=int, metavar='N', help='')
 parser.add_argument('-j', '--num_workers', default=8, type=int, metavar='N', help='number of data loading workers (default: 8)')
 parser.add_argument('--npoint', default=1024, type=int, metavar='N', help='')
+parser.add_argument('--is_using_virscan', action='store_true', default=False, help='')
 parser.add_argument('--dense_npoints', default=10000, type=int, metavar='N', help='')
 
 
@@ -65,6 +65,24 @@ elif cfg.out_classes == 40:
     label_indexes = fourth_label_indexes
     label_names = fourth_label_names
 
+def read_off_lines(path):
+    with open(path) as file:
+        line = file.readline()
+        while 'end_header' not in line:
+            line = file.readline()
+            if 'element vertex' in line:
+                points_num = int(line.split()[2])
+
+        points = []
+        normal = []
+        for _ in range(points_num):
+            line = file.readline()
+            points.append([float(x) for x in line.split()][:3])
+            normal.append([float(x) for x in line.split()][3:])
+
+        points = np.array(points)
+        normal = np.array(normal)
+    return points, normal
 
 def sample_points(obj, num_points, normal):
     curr_points = []
@@ -99,7 +117,7 @@ def sample_points(obj, num_points, normal):
     normal = np.array(curr_normal)
     return points, normal
 
-def farthest_points_normalized(obj_points, faces, num_points, normal):
+def farthest_points_normalized_wfaces(obj_points, faces, num_points, normal):
     first = np.random.randint(len(obj_points))
     selected = [first]
     dists = np.full(shape = len(obj_points), fill_value = np.inf)
@@ -120,18 +138,37 @@ def farthest_points_normalized(obj_points, faces, num_points, normal):
 
     return res_points, faces, res_normal
 
+def farthest_points_normalized(obj_points, num_points, normal):
+    first = np.random.randint(len(obj_points))
+    selected = [first]
+    dists = np.full(shape = len(obj_points), fill_value = np.inf)
+
+    for _ in range(num_points - 1):
+        dists = np.minimum(dists, np.linalg.norm(obj_points - obj_points[selected[-1]][np.newaxis, :], axis = 1))
+        selected.append(np.argmax(dists))
+    res_points = np.array(obj_points[selected])
+    res_normal = np.array(normal[selected])
+
+    # normalize the points
+    avg = np.average(res_points, axis = 0)
+    res_points = res_points - avg[np.newaxis, :]
+    dists = np.max(np.linalg.norm(res_points, axis = 1), axis = 0)
+    res_points = res_points / dists
+
+    return res_points, res_normal
 
 def main():
-    wo_normal = True
-    using_virscan = False
+    using_virscan = cfg.is_using_virscan
     # model
     model_path = os.path.join('Pretrained', cfg.arch, str(cfg.npoint), 'model_best.pth.tar')
     if cfg.arch == 'PointNet':
         from PointNet import PointNet
         net = PointNet(cfg.classes, npoint=cfg.npoint).cuda()
     elif cfg.arch == 'PointNetPP':
-        from PointNetPP_msg import PointNet2ClassificationMSG
-        net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
+        #from Model.PointNetPP_msg import PointNet2ClassificationMSG
+        #net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
+        from Model.PointNetPP_ssg import PointNet2ClassificationSSG
+        net = PointNet2ClassificationSSG(use_xyz=True, use_normal=False).cuda()
     elif cfg.arch == 'DGCNN':
         from DGCNN import DGCNN_cls
         net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
@@ -152,45 +189,7 @@ def main():
 
 
     if using_virscan:
-        def read_off_lines(path):
-            with open(path) as file:
-                line = file.readline()
-                while 'end_header' not in line:
-                    line = file.readline()
-                    if 'element vertex' in line:
-                        points_num = int(line.split()[2])
-
-                points = []
-                normal = []
-                for _ in range(points_num):
-                    line = file.readline()
-                    points.append([float(x) for x in line.split()][:3])
-                    normal.append([float(x) for x in line.split()][3:])
-
-                points = np.array(points)
-                normal = np.array(normal)
-            return points, normal
-        def farthest_points_normalized(obj_points, num_points, normal):
-            first = np.random.randint(len(obj_points))
-            selected = [first]
-            dists = np.full(shape = len(obj_points), fill_value = np.inf)
-
-            for _ in range(num_points - 1):
-                dists = np.minimum(dists, np.linalg.norm(obj_points - obj_points[selected[-1]][np.newaxis, :], axis = 1))
-                selected.append(np.argmax(dists))
-            res_points = np.array(obj_points[selected])
-            res_normal = np.array(normal[selected])
-
-            # normalize the points and faces
-            avg = np.average(res_points, axis = 0)
-            res_points = res_points - avg[np.newaxis, :]
-            dists = np.max(np.linalg.norm(res_points, axis = 1), axis = 0)
-            res_points = res_points / dists
-
-            return res_points, res_normal
-
-
-        datadir = '../Vis/Ori_Mesh'
+        datadir = ROOT_DIR+'/Data/Ten_class_pc_normal'
         file_names = os.listdir(datadir)
         for i, file_name in enumerate(file_names):
             if '.obj' in file_name:
@@ -216,7 +215,7 @@ def main():
                 pred_label = torch.max(output_var.data.cpu(),1)[1]
 
                 if pred_label[0] == label[0]:
-                    print('[{0}/{1}] label {2}: pred successed!'.format(i, len(file_names)/2.0, label[0]))
+                    print('[{0}/{1}] label {2}: pred successed!'.format(i, len(file_names), label[0]))
 
                     all_data[label[0]].append(pc[:,[0,2,1],:].clone())
                     all_normal[label[0]].append(normal[:,[0,2,1],:].clone())
@@ -226,9 +225,9 @@ def main():
                     all_label[label[0]].append(label[0].clone().view(1,1))
 
                 else:
-                    print('[{0}/{1}] label {2}: pred failed!'.format(i, len(file_names)/2.0, label[0]))
+                    print('[{0}/{1}] label {2}: pred failed!'.format(i, len(file_names), label[0]))
             else:
-                print('[{0}/{1}] label {2}: pass!'.format(i, len(file_names)/2.0, label[0]))
+                print('[{0}/{1}] label {2}: pass!'.format(i, len(file_names), label[0]))
 
     else:
         #data
@@ -277,7 +276,6 @@ def main():
     save_dense_normal = []
 
     all_num = 0
-
 
     for j, k in enumerate(label_indexes):
         tmp_data = torch.cat(all_data[k], 0)

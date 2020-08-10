@@ -19,17 +19,11 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch.optim as optim
 from torch.autograd.gradcheck import zero_gradients
-from modelnet40_with_vert import ModelNet40_vert
 from pytorch3d.structures import Meshes
 from pytorch3d.io import load_obj, save_obj
 
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.split(BASE_DIR)[0]
-sys.path.append(BASE_DIR)
-sys.path.append(os.path.join(ROOT_DIR, 'Model'))
-sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
-
+#from modelnet40_with_vert import ModelNet40_vert
+from modelnet_trn_test import ModelNetDataset
 
 parser = argparse.ArgumentParser(description='Saving ori obj mesh')
 cfg  = parser.parse_args()
@@ -70,12 +64,13 @@ def pc_normalize_torch(point):
 
 
 def main():
-    test_dataset = ModelNet40_vert('/data/ModelNet40/', 40, phase='test', regenerate_dataset=False)
+    test_dataset = ModelNetDataset(root='/data/modelnet40_normal_resampled/', batch_size=1, npoints=cfg.npoint, split='test', normal_channel=True)
+    #test_dataset = ModelNet40_vert('/data/ModelNet40/', 40, phase='test', regenerate_dataset=False)
     test_loader = torch.utils.data.DataLoader(test_dataset, 1, shuffle=True, drop_last=True, num_workers=8, pin_memory=True)
     test_size = test_dataset.__len__()
 
-    if not os.path.exists(os.path.join('../Vis', 'Ori_Mesh')):
-            os.makedirs(os.path.join('../Vis', 'Ori_Mesh'))
+    if not os.path.exists(os.path.join('../Data', 'Ten_class_ori_mesh')):
+            os.makedirs(os.path.join('../Data', 'Ten_class_ori_mesh'))
 
     for i, (vert, faces, label) in enumerate(test_loader):
         if convert_from_modelnet40_1024_processed[label[0]] in label_indexes:
@@ -84,11 +79,11 @@ def main():
             vert, _, _ = pc_normalize_torch(vert)
             trg_mesh = Meshes(verts=[vert], faces=[faces]).cuda()
 
-            file_name = os.path.join('../Vis', 'Ori_Mesh', str(i)+'_'+str(convert_from_modelnet40_1024_processed[label[0]])+'.obj')
+            file_name = os.path.join('../Data', 'Ten_class_ori_mesh', str(i)+'_'+str(convert_from_modelnet40_1024_processed[label[0]])+'.obj')
             final_verts, final_faces = trg_mesh.get_mesh_verts_faces(0)
             print('Processing ['+str(i)+'/'+str(test_size)+' ] instance')
             save_obj(file_name, final_verts, final_faces)
 
 
 if __name__ == '__main__':
-    main()  
+    main()
