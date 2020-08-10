@@ -15,7 +15,7 @@ from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
 from Attacker.geoA3_attacker import attack
-from Lib.loss_utils import *
+from Lib.utility import estimate_normal_via_ori_normal, _compare
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -143,12 +143,6 @@ def accuracy(output, target, topk=(1,)):
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
 
-def _compare(output, target, gt, targeted):
-    if targeted:
-        return output == target
-    else:
-        return output != gt
-
 def main():
     if cfg.id == 0:
         seed = 0
@@ -233,9 +227,9 @@ def main():
         normal_var = Variable(normal.clone(), requires_grad=False)
 
         if dense_iter is not None:
-            data = dense_iter.next()
-            dense_point = data[0]
-            dense_normal = data[1]
+            dense_data = dense_iter.next()
+            dense_point = dense_data[0]
+            dense_normal = dense_data[1]
 
             if dense_point.size(2) == 3:
                 dense_point = dense_point.permute(0,2,1).cuda()
@@ -251,20 +245,26 @@ def main():
 
         elif cfg.attack == 'GeoA3':
             adv_pc, targeted_label, attack_success_indicator  = attack(net, data, cfg, i, len(test_loader))
+
+        elif cfg.attack == 'robust_attack':
+            adv_pc, targeted_label, attack_success_indicator  = attack(net, dense_data, cfg, i, len(test_loader))
+
+        if cfg.attack == 'GeoA3' or cfg.attack == 'robust_attack':
             with torch.no_grad():
                 test_adv_var = Variable(adv_pc.clone())
                 test_adv_output = net(test_adv_var)
             if cfg.is_save_normal:
                 with torch.no_grad():
-                    n_curr = adv_pc.size(2)
-                    needed_knn = 1
-                    intra_dis = ((adv_pc.unsqueeze(3) - dense_point.unsqueeze(2))**2).sum(1)#[b, n_curr, n_dense]
-                    intra_idx = torch.topk(intra_dis, k=needed_knn, dim=2, largest=False, sorted=True)[1]#[b, n_curr, needed_knn]
-                    knn_normal = torch.zeros(b,3,n_curr).cuda()
-                    for kth in range(needed_knn):
-                        curr_normal = torch.gather(dense_normal, 2, intra_idx[:,:,kth].view(b,1,n_curr).expand(b,3,n_curr)) #normal:[b, 3, n_curr]
-                        knn_normal += curr_normal
-                    knn_normal = knn_normal/needed_knn
+                    # n_curr = adv_pc.size(2)
+                    # needed_knn = 1
+                    # intra_dis = ((adv_pc.unsqueeze(3) - dense_point.unsqueeze(2))**2).sum(1)#[b, n_curr, n_dense]
+                    # intra_idx = torch.topk(intra_dis, k=needed_knn, dim=2, largest=False, sorted=True)[1]#[b, n_curr, needed_knn]
+                    # knn_normal = torch.zeros(b,3,n_curr).cuda()
+                    # for kth in range(needed_knn):
+                    #     curr_normal = torch.gather(dense_normal, 2, intra_idx[:,:,kth].view(b,1,n_curr).expand(b,3,n_curr)) #normal:[b, 3, n_curr]
+                    #     knn_normal += curr_normal
+                    # knn_normal = knn_normal/needed_knn
+                    knn_normal = estimate_normal_via_ori_normal(adv_pc, dense_point, dense_normal, k=3)
                 saved_normal = knn_normal.cpu().clone().numpy()
 
             attack_success = _compare(torch.max(test_adv_output,1)[1].data, targeted_label, gt_target.cuda(), targeted)

@@ -19,27 +19,20 @@ ROOT_DIR = BASE_DIR + '/../'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
-from utility import compute_theta_normal, estimate_perpendicular
+from utility import compute_theta_normal, estimate_perpendicular, _compare
 from loss_utils import norm_l2_loss, chamfer_loss, hausdorff_loss, normal_loss
 
-def _compare(output, target, gt, targeted):
-    if targeted:
-        return output == target
-    else:
-        return output != gt
-
-def _forward_step(net, pc_ori_var, input_var, normal_var, theta_normal_var, target, scale_const, cfg, targeted):
+def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, target, scale_const, cfg, targeted):
     #needed cfg:[arch, classes, cls_loss_type, confidence, dis_loss_type, is_cd_single_side, dis_loss_weight, hd_loss_weight, curv_loss_weight, curv_loss_knn]
-    b,_,n=input_var.size()
-    output_var = net(input_var)
+    b,_,n=input_curr_iter.size()
+    output_curr_iter = net(input_curr_iter)
 
     if cfg.cls_loss_type == 'Margin':
         target_onehot = torch.zeros(target.size() + (cfg.classes,)).cuda()
         target_onehot.scatter_(1, target.unsqueeze(1), 1.)
-        target_onehot_var = Variable(target_onehot, requires_grad=False)
 
-        fake = (target_onehot_var * output_var).sum(1)
-        other = ((1. - target_onehot_var) * output_var - target_onehot_var * 10000.).max(1)[0]
+        fake = (target_onehot * output_curr_iter).sum(1)
+        other = ((1. - target_onehot) * output_curr_iter - target_onehot * 10000.).max(1)[0]
 
         if targeted:
             # if targeted, optimize for making the other class most likely
@@ -50,9 +43,9 @@ def _forward_step(net, pc_ori_var, input_var, normal_var, theta_normal_var, targ
 
     elif cfg.cls_loss_type == 'CE':
         if targeted:
-            cls_loss = nn.CrossEntropyLoss(reduction='none').cuda()(output_var, Variable(target, requires_grad=False))
+            cls_loss = nn.CrossEntropyLoss(reduction='none').cuda()(output_curr_iter, Variable(target, requires_grad=False))
         else:
-            cls_loss = - nn.CrossEntropyLoss(reduction='none').cuda()(output_var, Variable(target, requires_grad=False))
+            cls_loss = - nn.CrossEntropyLoss(reduction='none').cuda()(output_curr_iter, Variable(target, requires_grad=False))
     elif cfg.cls_loss_type == 'None':
         cls_loss = torch.FloatTensor(b).zero_().cuda()
     else:
@@ -60,7 +53,7 @@ def _forward_step(net, pc_ori_var, input_var, normal_var, theta_normal_var, targ
 
     info = 'cls_loss: {0:6.4f}\t'.format(cls_loss.mean().item())
 
-    intra_dis = ((input_var.unsqueeze(3) - pc_ori_var.unsqueeze(2))**2).sum(1) #b*n*n
+    intra_dis = ((input_curr_iter.unsqueeze(3) - pc_ori.unsqueeze(2))**2).sum(1) #b*n*n
 
     if cfg.dis_loss_type == 'CD':
         if cfg.is_cd_single_side:
@@ -72,7 +65,7 @@ def _forward_step(net, pc_ori_var, input_var, normal_var, theta_normal_var, targ
         info = info + 'cd_loss: {0:6.4f}\t'.format(dis_loss.mean().item())
     elif cfg.dis_loss_type == 'L2':
         assert cfg.hd_loss_weight ==0
-        dis_loss = ((input_var - pc_ori_var)**2).sum(1).mean(1)
+        dis_loss = ((input_curr_iter - pc_ori)**2).sum(1).mean(1)
         constrain_loss = cfg.dis_loss_weight * dis_loss
         info = info + 'l2_loss: {0:6.4f}\t'.format(dis_loss.mean().item())
     elif cfg.dis_loss_type == 'None':
@@ -91,23 +84,23 @@ def _forward_step(net, pc_ori_var, input_var, normal_var, theta_normal_var, targ
 
     # nor loss
     if cfg.curv_loss_weight !=0:
-        curv_loss,_ = normal_loss(input_var, pc_ori_var, normal_var, None, cfg.curv_loss_knn)
+        curv_loss,_ = normal_loss(input_curr_iter, pc_ori, normal_curr_iter, None, cfg.curv_loss_knn)
 
-        intra_dis = ((input_var.unsqueeze(3) - pc_ori_var.unsqueeze(2))**2).sum(1)
+        intra_dis = ((input_curr_iter.unsqueeze(3) - pc_ori.unsqueeze(2))**2).sum(1)
         intra_idx = torch.topk(intra_dis, 1, dim=2, largest=False, sorted=True)[1]
-        knn_theta_normal_var = torch.gather(theta_normal_var, 1, intra_idx.view(b,n).expand(b,n))
-        curv_loss = ((curv_loss - knn_theta_normal_var)**2).mean(-1)
+        knn_theta_normal = torch.gather(theta_normal, 1, intra_idx.view(b,n).expand(b,n))
+        curv_loss = ((curv_loss - knn_theta_normal)**2).mean(-1)
 
         constrain_loss = constrain_loss + cfg.curv_loss_weight * curv_loss
         info = info+'curv_loss : {0:6.4f}\t'.format(curv_loss.mean().item())
     else:
         curv_loss = 0
 
-    scale_const_var = Variable(scale_const.float().cuda(), requires_grad=False)
-    loss_n = cls_loss + scale_const_var * constrain_loss
+    scale_const = scale_const.float().cuda()
+    loss_n = cls_loss + scale_const * constrain_loss
     loss = loss_n.mean()
 
-    return output_var, loss, dis_loss, hd_loss, curv_loss, constrain_loss, info
+    return output_curr_iter, loss, dis_loss, hd_loss, curv_loss, constrain_loss, info
 
 def attack(net, input_data, cfg, i, loader_len):
     #needed cfg:[arch, classes, attack_label, initial_const, lr, optim, binary_max_steps, iter_max_steps, metric,
@@ -134,11 +127,9 @@ def attack(net, input_data, cfg, i, loader_len):
     bs, l, _, n = pc.size()
     b = bs*l
 
-    pc = pc.view(b, 3, n)
-    normal = normal.view(b, 3, n)
+    pc_ori = pc.view(b, 3, n).cuda()
+    normal_ori = normal.view(b, 3, n).cuda()
     gt_target = gt_labels.view(-1)
-    pc_ori_var = Variable(pc.clone().cuda(), requires_grad=False)
-    normal_var = Variable(normal.clone().cuda(), requires_grad=False)
 
     if cfg.attack_label == 'Untarget':
         target = gt_target.cuda()
@@ -146,9 +137,9 @@ def attack(net, input_data, cfg, i, loader_len):
         target = input_data[3].view(-1).cuda()
 
     if cfg.curv_loss_weight !=0:
-        theta_normal_var = compute_theta_normal(pc_ori_var, normal_var, cfg.curv_loss_knn)
+        theta_normal = compute_theta_normal(pc_ori, normal_ori, cfg.curv_loss_knn)
     else:
-        theta_normal_var = None
+        theta_normal = None
 
     lower_bound = torch.ones(b) * 0
     scale_const = torch.ones(b) * cfg.initial_const
@@ -166,30 +157,31 @@ def attack(net, input_data, cfg, i, loader_len):
 
         init_pert = torch.FloatTensor(pc.size())
         nn.init.normal_(init_pert, mean=0, std=1e-3)
-        input_var = Variable((pc.clone() + init_pert).cuda(), requires_grad=True)
+        input_all = (pc.clone() + init_pert).cuda()
+        input_all.requires_grad_()
 
         if cfg.optim == 'adam':
-            optimizer = optim.Adam([input_var], lr=cfg.lr)
+            optimizer = optim.Adam([input_all], lr=cfg.lr)
         elif cfg.optim == 'sgd':
-            optimizer = optim.SGD([input_var], lr=cfg.lr)
+            optimizer = optim.SGD([input_all], lr=cfg.lr)
         else:
             assert False, 'Not support such optimizer.'
 
         for step in range(cfg.iter_max_steps):
-            input_var_curr_iter = input_var
-            normal_curr_iter = normal_var
+            input_curr_iter = input_all
+            normal_curr_iter = normal_ori
 
             with torch.no_grad():
-                output_var = net(input_var.clone())
+                output = net(input_all.clone())
 
                 for k in range(b):
-                    output_logit = output_var[k]
+                    output_logit = output[k]
                     output_label = torch.argmax(output_logit).item()
                     metric = constrain_loss[k].item()
 
                     if _compare(output_label, target[k], gt_target[k].cuda(), targeted).item() and (metric <best_loss[k]):
                         best_loss[k] = metric
-                        best_attack[k] = input_var.data[k].clone()
+                        best_attack[k] = input_all.data[k].clone()
                         best_attack_BS_idx[k] = search_step
                         best_attack_idx[k] = step
                     if _compare(output_label, target[k], gt_target[k].cuda(), targeted).item() and (metric <iter_best_loss[k]):
@@ -198,19 +190,19 @@ def attack(net, input_data, cfg, i, loader_len):
 
             if cfg.is_pre_jitter_input:
                 if step % cfg.calculate_project_jitter_noise_iter == 0:
-                    project_jitter_noise = estimate_perpendicular(input_var_curr_iter, cfg.jitter_k, sigma=cfg.jitter_sigma, clip=cfg.jitter_clip)
+                    project_jitter_noise = estimate_perpendicular(input_curr_iter, cfg.jitter_k, sigma=cfg.jitter_sigma, clip=cfg.jitter_clip)
                 else:
                     project_jitter_noise = project_jitter_noise.clone()
-                input_var_curr_iter.data  = input_var_curr_iter.data  + project_jitter_noise
+                input_curr_iter.data  = input_curr_iter.data  + project_jitter_noise
 
-            _, loss, dis_loss, hd_loss, nor_loss, constrain_loss, info = _forward_step(net, pc_ori_var, input_var_curr_iter, normal_curr_iter, theta_normal_var, target, scale_const, cfg, targeted)
+            _, loss, dis_loss, hd_loss, nor_loss, constrain_loss, info = _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, target, scale_const, cfg, targeted)
 
             optimizer.zero_grad()
             if cfg.is_pre_jitter_input:
-                input_var_curr_iter.retain_grad()
+                input_curr_iter.retain_grad()
             loss.backward()
             if cfg.is_pre_jitter_input:
-                input_var.grad = input_var_curr_iter.grad
+                input_all.grad = input_curr_iter.grad
             optimizer.step()
 
             info = '[{5}/{6}][{0}/{1}][{2}/{3}] \t loss: {4:6.4f}\t'.format(search_step+1, cfg.binary_max_steps, step+1, cfg.iter_max_steps, loss.item(), i, loader_len) + info
@@ -233,7 +225,7 @@ def attack(net, input_data, cfg, i, loader_len):
 
     return best_attack, target, (np.array(best_loss)<1e10)  #best_attack:[b, 3, n], target: [b], best_loss:[b]
 
-def main():
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GEOA3 Point Cloud Attacking')
     #------------Model-----------------------
     parser.add_argument('--arch', default='PointNet', type=str, metavar='ARCH', help='')
@@ -315,7 +307,3 @@ def main():
         print(adv_pc.shape)
         break
     print('\n Finish! \n')
-
-
-if __name__ == '__main__':
-    main()

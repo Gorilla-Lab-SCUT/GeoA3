@@ -20,7 +20,6 @@ import seaborn
 def _normalize(input, p=2, dim=1, eps=1e-12):
     return input / input.norm(p, dim, keepdim=True).clamp(min=eps).expand_as(input)
 
-
 def compute_theta_normal(pc, normal, k):
     b,_,n=pc.size()
     inter_dis = ((pc.unsqueeze(3) - pc.unsqueeze(2))**2).sum(1)
@@ -90,6 +89,24 @@ def estimate_normal(pc, k):
         normal_vector = torch.stack(normal_vector, 0) #normal_vector:[b, 3, n]
     return normal_vector.float()
 
+def estimate_normal_via_ori_normal(pc_adv, pc_ori, normal_ori, k):
+    # pc_adv, pc_ori, normal_ori : [b,3,n]
+    b,_,n=pc_adv.size()
+    inter_dis = ((pc_adv.unsqueeze(3) - pc_ori.unsqueeze(2))**2).sum(1)
+    inter_value, inter_idx = torch.topk(inter_dis, k, dim=2, largest=False, sorted=True) #not the same variable, use k=k
+    inter_value = inter_value[:, :, 0].contiguous()
+    inter_idx = inter_idx.contiguous()
+    normal_pts = torch.gather(normal_ori, 2, inter_idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)
+    normal_pts_avg = normal_pts.mean(dim=-1)
+    normal_pts_avg = normal_pts_avg/(normal_pts_avg.norm(dim=1)+1e-12)
+
+    # If the points are not modified (distance = 0), use the normal directly from the original
+    # one. Otherwise, use the mean of the normals of the k-nearest points.
+    condition = (inter_value<1e-6).unsqueeze(1).expand_as(normal_ori)
+    normals_estimated = torch.where(condition, normal_ori, normal_pts_avg)
+
+    return normals_estimated
+
 def get_perpendicular_jitter(vector, sigma=0.01, clip=0.05):
     b,_,n=vector.size()
     aux_vector1 = sigma * torch.randn(b,3,n).cuda()
@@ -133,7 +150,11 @@ def estimate_perpendicular(pc, k, sigma=0.01, clip=0.05):
 
     return torch.clamp(perpendi_vector_1*aux_vector1, -1*clip, clip) + torch.clamp(perpendi_vector_2*aux_vector2, -1*clip, clip)
 
-
+def _compare(output, target, gt, targeted):
+    if targeted:
+        return output == target
+    else:
+        return output != gt
 
 _, term_width = os.popen('stty size', 'r').read().split()
 term_width = int(term_width)

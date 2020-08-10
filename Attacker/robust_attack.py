@@ -19,8 +19,18 @@ ROOT_DIR = BASE_DIR + '/../'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
-from utility import compute_theta_normal
+from utility import compute_theta_normal, estimate_normal_via_ori_normal, _compare
 from loss_utils import pseudo_chamfer_loss,kNN_smoothing_loss
+
+def random_sample_pointcloud(pc, normal, num_samples):
+    # pc:[b,3,n]
+    assert pc.size() == num_samples.size()
+    b, _, num_pts = pc.size()
+    rind = torch.randperm(num_pts)[:num_samples].unsqueeze(0).unsqueeze(1).expand(b,3,num_samples)
+    rpoints = torch.gather(pc, 2, rind)
+    rnormals = torch.gather(normal, 2, rind)
+
+    return rpoints, rnormals
 
 
 def offset_clipping(offset, normal, cc_linf, project='dir'):
@@ -73,18 +83,17 @@ def offset_clipping(offset, normal, cc_linf, project='dir'):
 
     return offset
 
-def _forward_step(net, pc_ori_var, input_var, target, scale_const, cfg, targeted):
-    b,_,n=input_var.size()
-    output_var = net(input_var)
+def _forward_step(net, pc_ori, input_curr_iter, target, scale_const, cfg, targeted):
+    b,_,n=input_curr_iter.size()
+    output_curr_iter = net(input_curr_iter)
 
     # Logits loss
     if cfg.cls_loss_type == 'Margin':
         target_onehot = torch.zeros(target.size() + (cfg.classes,)).cuda()
         target_onehot.scatter_(1, target.unsqueeze(1), 1.)
-        target_onehot_var = Variable(target_onehot, requires_grad=False)
 
-        fake = (target_onehot_var * output_var).sum(1)
-        other = ((1. - target_onehot_var) * output_var - target_onehot_var * 10000.).max(1)[0]
+        fake = (target_onehot * output_curr_iter).sum(1)
+        other = ((1. - target_onehot) * output_curr_iter - target_onehot * 10000.).max(1)[0]
 
         if targeted:
             # if targeted, optimize for making the other class most likely
@@ -95,9 +104,9 @@ def _forward_step(net, pc_ori_var, input_var, target, scale_const, cfg, targeted
 
     elif cfg.cls_loss_type == 'CE':
         if targeted:
-            cls_loss = nn.CrossEntropyLoss(reduction='none').cuda()(output_var, Variable(target, requires_grad=False))
+            cls_loss = nn.CrossEntropyLoss(reduction='none').cuda()(output_curr_iter, target)
         else:
-            cls_loss = - nn.CrossEntropyLoss(reduction='none').cuda()(output_var, Variable(target, requires_grad=False))
+            cls_loss = - nn.CrossEntropyLoss(reduction='none').cuda()(output_curr_iter, target)
     elif cfg.cls_loss_type == 'None':
         cls_loss = torch.FloatTensor(b).zero_().cuda()
     else:
@@ -106,40 +115,130 @@ def _forward_step(net, pc_ori_var, input_var, target, scale_const, cfg, targeted
     info = 'cls_loss: {0:6.4f}\t'.format(cls_loss.mean().item())
 
     # Chamfer pseudo distance (one side)
-    dis_loss = pseudo_chamfer_loss(input_var, pc_ori_var) #[b]
+    dis_loss = pseudo_chamfer_loss(input_curr_iter, pc_ori) #[b]
     constrain_loss = cfg.cd_loss_weight * dis_loss
     info = info + 'cd_loss: {0:6.4f}\t'.format(dis_loss.mean().item())
 
     # kNN distance loss
-    knn_smoothing_loss = kNN_smoothing_loss(input_var, k=cfg.knn_smoothing_k, threshold_coef=cfg.knn_threshold_coef) #[b]
+    knn_smoothing_loss = kNN_smoothing_loss(input_curr_iter, k=cfg.knn_smoothing_k, threshold_coef=cfg.knn_threshold_coef) #[b]
     constrain_loss = constrain_loss + cfg.knn_smoothing_loss_weight * knn_smoothing_loss
     info = info+'kNN_loss : {0:6.4f}\t'.format(knn_smoothing_loss.mean().item())
 
     # total loss
-    scale_const_var = Variable(scale_const.float().cuda(), requires_grad=False)
-    loss_n = cls_loss + scale_const_var * constrain_loss
+    scale_const = scale_const.float().cuda()
+    loss_n = cls_loss + scale_const * constrain_loss
     loss = loss_n.mean()
 
-    return output_var, loss, dis_loss, knn_smoothing_loss, constrain_loss, info
+    return output_curr_iter, loss, dis_loss, knn_smoothing_loss, constrain_loss, info
 
 def attack(net, input_data, cfg, i, loader_len):
 
-  for search_step in range(cfg.binary_max_steps):
+    if cfg.attack_label == 'Untarget':
+        targeted = False
+    else:
+        targeted = True
 
-    for step in range(cfg.iter_max_steps):
+    step_print_freq = 50
 
-        output_var, loss, dis_loss, knn_smoothing_loss, constrain_loss, info = _forward_step(net, pc_ori_var, input_var, target, scale_const, cfg, targeted)
+    pc = input_data[0]
+    normal = input_data[1]
+    gt_labels = input_data[2]
+    if pc.size(3) == 3:
+        pc = pc.permute(0,1,3,2)
+    if normal.size(3) == 3:
+        normal = normal.permute(0,1,3,2)
 
+    bs, l, _, n = pc.size()
+    b = bs*l
 
-        # Perturbation Projection and Clipping
-        offset = input_var - pc_ori_var
-        with torch.no_grad():
-            proj_offset = offset_clipping(offset, normal, cfg.cc_linf)
-            input_var = pc_ori_var + proj_offset
+    pc_ori = pc.view(b, 3, n).cuda()
+    normal_ori = normal.view(b, 3, n).cuda()
+    gt_target = gt_labels.view(-1)
 
+    if cfg.attack_label == 'Untarget':
+        target = gt_target.cuda()
+    else:
+        target = input_data[3].view(-1).cuda()
 
+    lower_bound = torch.ones(b) * 0
+    scale_const = torch.ones(b) * cfg.initial_const
+    upper_bound = torch.ones(b) * 1e10
 
-def main():
+    best_loss = [1e10] * b
+    best_attack = torch.ones(b, 3, n).cuda()
+    best_attack_idx = [-1] * b
+    best_attack_BS_idx = [-1] * b
+
+    for search_step in range(cfg.binary_max_steps):
+        iter_best_loss = [1e10] * b
+        iter_best_score = [-1] * b
+        constrain_loss = torch.ones(b) * 1e10
+
+        init_pert = torch.FloatTensor(pc.size())
+        nn.init.normal_(init_pert, mean=0, std=1e-3)
+        input_all = (pc.clone() + init_pert).cuda()
+        input_all.requires_grad_()
+
+        if cfg.optim == 'adam':
+            optimizer = optim.Adam([input_all], lr=cfg.lr)
+        elif cfg.optim == 'sgd':
+            optimizer = optim.SGD([input_all], lr=cfg.lr)
+        else:
+            assert False, 'Not support such optimizer.'
+
+        for step in range(cfg.iter_max_steps):
+            input_curr_iter, normal_curr_iter = random_sample_pointcloud(input_all, normal_ori, num_samples=1024)
+
+            with torch.no_grad():
+                output = net(input_all.clone())
+
+                for k in range(b):
+                    output_logit = output[k]
+                    output_label = torch.argmax(output_logit).item()
+                    metric = constrain_loss[k].item()
+
+                    if _compare(output_label, target[k], gt_target[k].cuda(), targeted).item() and (metric <best_loss[k]):
+                        best_loss[k] = metric
+                        best_attack[k] = input_all.data[k].clone()
+                        best_attack_BS_idx[k] = search_step
+                        best_attack_idx[k] = step
+                    if _compare(output_label, target[k], gt_target[k].cuda(), targeted).item() and (metric <iter_best_loss[k]):
+                        iter_best_loss[k] = metric
+                        iter_best_score[k] = output_label
+
+            output_curr_iter, loss, dis_loss, knn_smoothing_loss, constrain_loss, info = _forward_step(net, pc_ori, input_curr_iter, target, scale_const, cfg, targeted)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            # Perturbation Projection and Clipping
+            offset = input_curr_iter - pc_ori
+            with torch.no_grad():
+                proj_offset = offset_clipping(offset, normal_ori, cfg.cc_linf)
+                input_curr_iter = pc_ori + proj_offset
+
+            info = '[{5}/{6}][{0}/{1}][{2}/{3}] \t loss: {4:6.4f}\t'.format(search_step+1, cfg.binary_max_steps, step+1, cfg.iter_max_steps, loss.item(), i, loader_len) + info
+
+            if (step+1) % step_print_freq == 0 or step == cfg.iter_max_steps - 1:
+                print(info)
+
+        # adjust the scale constants
+        for k in range(b):
+            if _compare(output_label, target[k], gt_target[k].cuda(), targeted).item() and iter_best_score[k] != -1:
+                lower_bound[k] = max(lower_bound[k], scale_const[k])
+                if upper_bound[k] < 1e9:
+                    scale_const[k] = (lower_bound[k] + upper_bound[k]) * 0.5
+                else:
+                    scale_const[k] *= 2
+            else:
+                upper_bound[k] = min(upper_bound[k], scale_const[k])
+                if upper_bound[k] < 1e9:
+                    scale_const[k] = (lower_bound[k] + upper_bound[k]) * 0.5
+
+    return best_attack, target, (np.array(best_loss)<1e10)  #best_attack:[b, 3, n], target: [b], best_loss:[b]
+
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Robust Point Cloud Attacking')
     #------------Model-----------------------
     parser.add_argument('--arch', default='PointNet', type=str, metavar='ARCH', help='')
@@ -216,8 +315,3 @@ def main():
         print(adv_pc.shape)
         break
     print('\n Finish! \n')
-
-
-if __name__ == '__main__':
-    main()
-
