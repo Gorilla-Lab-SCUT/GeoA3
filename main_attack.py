@@ -42,7 +42,7 @@ parser.add_argument('-c', '--classes', default=40, type=int, metavar='N', help='
 parser.add_argument('-b', '--batch_size', default=2, type=int, metavar='B', help='batch_size (default: 2)')
 parser.add_argument('--npoint', default=1024, type=int, help='')
 #------------Attack-----------------------
-parser.add_argument('--attack', default=None, type=str, help='')
+parser.add_argument('--attack', default=None, type=str, help='GeoA3 | RA')
 parser.add_argument('--attack_label', default='All', type=str, help='[All; ...; Untarget]')
 parser.add_argument('--binary_max_steps', type=int, default=10, help='')
 parser.add_argument('--initial_const', type=float, default=10, help='')
@@ -61,6 +61,12 @@ parser.add_argument('--hd_loss_weight', type=float, default=0.1, help='')
 ## normal loss
 parser.add_argument('--curv_loss_weight', type=float, default=1.0, help='')
 parser.add_argument('--curv_loss_knn', type=int, default=16, help='')
+## KNN smoothing loss
+parser.add_argument('--knn_smoothing_loss_weight', type=float, default=5.0, help='')
+parser.add_argument('--knn_smoothing_k', type=int, default=5, help='')
+parser.add_argument('--knn_threshold_coef', type=float, default=1.10, help='')
+## perturbation clip setting
+parser.add_argument('--cc_linf', type=float, default=0.1, help='Coefficient for infinity norm')
 ## Jitter
 parser.add_argument('--is_pre_jitter_input', action='store_true', default=False, help='')
 parser.add_argument('--is_previous_jitter_input', action='store_true', default=False, help='')
@@ -82,7 +88,7 @@ else:
 
 saved_root = os.path.join('Exps', cfg.arch + '_npoint' + str(cfg.npoint))
 
-saved_dir = 'Pertub_' +  str(cfg.id) +  '_BiStep' + str(cfg.binary_max_steps) + '_IterStep' + str(cfg.iter_max_steps) + '_Opt' + cfg.optim  +  '_Lr' + str(cfg.lr) + '_Initcons' + str(cfg.initial_const) + '_' + cfg.cls_loss_type + '_' + str(cfg.dis_loss_type) + 'Loss' + str(cfg.dis_loss_weight)
+saved_dir = str(cfg.attack) + '_' +  str(cfg.id) +  '_BiStep' + str(cfg.binary_max_steps) + '_IterStep' + str(cfg.iter_max_steps) + '_Opt' + cfg.optim  +  '_Lr' + str(cfg.lr) + '_Initcons' + str(cfg.initial_const) + '_' + cfg.cls_loss_type + '_' + str(cfg.dis_loss_type) + 'Loss' + str(cfg.dis_loss_weight)
 
 if cfg.hd_loss_weight != 0:
     saved_dir = saved_dir + '_HDLoss' + str(cfg.hd_loss_weight)
@@ -246,10 +252,10 @@ def main():
         elif cfg.attack == 'GeoA3':
             adv_pc, targeted_label, attack_success_indicator  = attack(net, data, cfg, i, len(test_loader))
 
-        elif cfg.attack == 'robust_attack':
+        elif cfg.attack == 'RA':
             adv_pc, targeted_label, attack_success_indicator  = attack(net, dense_data, cfg, i, len(test_loader))
 
-        if cfg.attack == 'GeoA3' or cfg.attack == 'robust_attack':
+        if cfg.attack == 'GeoA3' or cfg.attack == 'RA':
             with torch.no_grad():
                 test_adv_var = Variable(adv_pc.clone())
                 test_adv_output = net(test_adv_var)

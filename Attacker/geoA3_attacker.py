@@ -155,9 +155,9 @@ def attack(net, input_data, cfg, i, loader_len):
         iter_best_score = [-1] * b
         constrain_loss = torch.ones(b) * 1e10
 
-        init_pert = torch.FloatTensor(pc.size())
+        init_pert = torch.FloatTensor(pc_ori.size())
         nn.init.normal_(init_pert, mean=0, std=1e-3)
-        input_all = (pc.clone() + init_pert).cuda()
+        input_all = (pc_ori.clone() + init_pert.cuda())
         input_all.requires_grad_()
 
         if cfg.optim == 'adam':

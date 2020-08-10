@@ -116,7 +116,7 @@ def _forward_step(net, pc_ori, input_curr_iter, target, scale_const, cfg, target
 
     # Chamfer pseudo distance (one side)
     dis_loss = pseudo_chamfer_loss(input_curr_iter, pc_ori) #[b]
-    constrain_loss = cfg.cd_loss_weight * dis_loss
+    constrain_loss = cfg.dis_loss_weight * dis_loss
     info = info + 'cd_loss: {0:6.4f}\t'.format(dis_loss.mean().item())
 
     # kNN distance loss
@@ -174,9 +174,9 @@ def attack(net, input_data, cfg, i, loader_len):
         iter_best_score = [-1] * b
         constrain_loss = torch.ones(b) * 1e10
 
-        init_pert = torch.FloatTensor(pc.size())
+        init_pert = torch.FloatTensor(pc_ori.size())
         nn.init.normal_(init_pert, mean=0, std=1e-3)
-        input_all = (pc.clone() + init_pert).cuda()
+        input_all = (pc_ori.clone() + init_pert.cuda())
         input_all.requires_grad_()
 
         if cfg.optim == 'adam':
@@ -187,10 +187,10 @@ def attack(net, input_data, cfg, i, loader_len):
             assert False, 'Not support such optimizer.'
 
         for step in range(cfg.iter_max_steps):
-            input_curr_iter, normal_curr_iter = random_sample_pointcloud(input_all, normal_ori, num_samples=1024)
+            input_curr_iter, normal_curr_iter = random_sample_pointcloud(input_all, normal_ori, num_samples=cfg.npoint)
 
             with torch.no_grad():
-                output = net(input_all.clone())
+                output = net(input_curr_iter.clone())
 
                 for k in range(b):
                     output_logit = output[k]
@@ -259,14 +259,13 @@ if __name__ == '__main__':
     parser.add_argument('--cls_loss_type', default='Margin', type=str, help='Margin | CE')
     parser.add_argument('--confidence', type=float, default=15, help='confidence for margin based attack method')
     ## distance loss
-    parser.add_argument('--cd_loss_weight', type=float, default=3.0, help='')
+    parser.add_argument('--dis_loss_weight', type=float, default=3.0, help='')
     ## KNN smoothing loss
     parser.add_argument('--knn_smoothing_loss_weight', type=float, default=5.0, help='')
     parser.add_argument('--knn_smoothing_k', type=int, default=5, help='')
     parser.add_argument('--knn_threshold_coef', type=float, default=1.10, help='')
     ## perturbation clip setting
     parser.add_argument('--cc_linf', type=float, default=0.1, help='Coefficient for infinity norm')
-
     ## eval metric
     parser.add_argument('--metric', default='Loss', type=str, help='[Loss | CDDis | HDDis | CurDis]')
     #------------OS-----------------------
