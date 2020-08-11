@@ -108,7 +108,7 @@ def kNN_smoothing_loss(adv_pc, k, threshold_coef=1.05):
     knn_dis_std = knn_dis.std(-1) #[b]
     threshold = knn_dis_mean + threshold_coef * knn_dis_std #[b]
 
-    condition = torch.gt(knn_dis, threshold).float() #[b,n]
+    condition = torch.gt(knn_dis, threshold.unsqueeze(1)).float() #[b,n]
     dis_mean = knn_dis * condition #[b,n]
 
     return dis_mean.mean(1) #[b]

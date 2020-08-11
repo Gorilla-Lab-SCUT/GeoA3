@@ -156,6 +156,38 @@ def _compare(output, target, gt, targeted):
     else:
         return output != gt
 
+def farthest_points_normalized_single_numpy(obj_points, num_points):
+    first = np.random.randint(len(obj_points))
+    selected = [first]
+    dists = np.full(shape = len(obj_points), fill_value = np.inf)
+
+    for _ in range(num_points - 1):
+        dists = np.minimum(dists, np.linalg.norm(obj_points - obj_points[selected[-1]][np.newaxis, :], axis = 1))
+        selected.append(np.argmax(dists))
+    res_points = np.array(obj_points[selected])
+
+    # normalize the points
+    avg = np.average(res_points, axis = 0)
+    res_points = res_points - avg[np.newaxis, :]
+    dists = np.max(np.linalg.norm(res_points, axis = 1), axis = 0)
+    res_points = res_points / dists
+
+    return res_points
+
+def farthest_points_sample(obj_points, num_points):
+    assert obj_points.size(1) == 3
+    b,_,n = obj_points.size()
+
+    selected = torch.randint(obj_points.size(2), [obj_points.size(0),1]).cuda()
+    dists = torch.full([obj_points.size(0), obj_points.size(2)], fill_value = np.inf).cuda()
+
+    for _ in range(num_points - 1):
+        dists = torch.min(dists, torch.norm(obj_points - torch.gather(obj_points, 2, selected[:,-1].unsqueeze(1).unsqueeze(2).expand(b,3,1)), dim = 1))
+        selected = torch.cat([selected, torch.argmax(dists, dim=1, keepdim=True)], dim = 1)
+    res_points = torch.gather(obj_points, 2, selected.unsqueeze(1).expand(b, 3, num_points))
+
+    return res_points
+
 _, term_width = os.popen('stty size', 'r').read().split()
 term_width = int(term_width)
 TOTAL_BAR_LENGTH = 30.

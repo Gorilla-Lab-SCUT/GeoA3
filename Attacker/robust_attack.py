@@ -22,16 +22,16 @@ sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 from utility import compute_theta_normal, estimate_normal_via_ori_normal, _compare
 from loss_utils import pseudo_chamfer_loss,kNN_smoothing_loss
 
-def random_sample_pointcloud(pc, normal, num_samples):
+def random_sample_pointcloud(pc, normal, pc_ori, num_samples):
     # pc:[b,3,n]
-    assert pc.size() == num_samples.size()
+    assert pc.size() == normal.size()
     b, _, num_pts = pc.size()
-    rind = torch.randperm(num_pts)[:num_samples].unsqueeze(0).unsqueeze(1).expand(b,3,num_samples)
+    rind = torch.randperm(num_pts)[:num_samples].unsqueeze(0).unsqueeze(1).expand(b,3,num_samples).cuda()
     rpoints = torch.gather(pc, 2, rind)
     rnormals = torch.gather(normal, 2, rind)
+    rpoints_ori = torch.gather(pc_ori, 2, rind)
 
-    return rpoints, rnormals
-
+    return rpoints, rnormals, rpoints_ori, rind
 
 def offset_clipping(offset, normal, cc_linf, project='dir'):
     # offset: shape [b, 3, n], perturbation offset of each point
@@ -47,7 +47,7 @@ def offset_clipping(offset, normal, cc_linf, project='dir'):
         #    Note that the length of vref should be greater than zero
 
         vng = torch.cross(normal, offset) #[b, 3, n]
-        vng_len = (vng**2).sum(1, keepdim=False).sqrt() #[b, n]
+        vng_len = (vng**2).sum(1, keepdim=True).sqrt() #[b, n]
 
         vref = torch.cross(vng, normal) #[b, 3, n]
         vref_len = (vref**2).sum(1, keepdim=True).sqrt() #[b, 1, n]
@@ -187,7 +187,7 @@ def attack(net, input_data, cfg, i, loader_len):
             assert False, 'Not support such optimizer.'
 
         for step in range(cfg.iter_max_steps):
-            input_curr_iter, normal_curr_iter = random_sample_pointcloud(input_all, normal_ori, num_samples=cfg.npoint)
+            input_curr_iter, normal_curr_iter, pc_ori_curr_iter, rind = random_sample_pointcloud(input_all, normal_ori, pc_ori, num_samples=cfg.npoint)
 
             with torch.no_grad():
                 output = net(input_curr_iter.clone())
@@ -206,17 +206,17 @@ def attack(net, input_data, cfg, i, loader_len):
                         iter_best_loss[k] = metric
                         iter_best_score[k] = output_label
 
-            output_curr_iter, loss, dis_loss, knn_smoothing_loss, constrain_loss, info = _forward_step(net, pc_ori, input_curr_iter, target, scale_const, cfg, targeted)
+            output_curr_iter, loss, dis_loss, knn_smoothing_loss, constrain_loss, info = _forward_step(net, pc_ori_curr_iter, input_curr_iter, target, scale_const, cfg, targeted)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             # Perturbation Projection and Clipping
-            offset = input_curr_iter - pc_ori
+            offset = input_curr_iter - pc_ori_curr_iter
             with torch.no_grad():
-                proj_offset = offset_clipping(offset, normal_ori, cfg.cc_linf)
-                input_curr_iter = pc_ori + proj_offset
+                proj_offset = offset_clipping(offset, normal_curr_iter, cfg.cc_linf)
+                input_all.data[:,:,rind[0,0]] = (pc_ori_curr_iter + proj_offset).data
 
             info = '[{5}/{6}][{0}/{1}][{2}/{3}] \t loss: {4:6.4f}\t'.format(search_step+1, cfg.binary_max_steps, step+1, cfg.iter_max_steps, loss.item(), i, loader_len) + info
 
