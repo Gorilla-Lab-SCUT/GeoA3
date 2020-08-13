@@ -28,7 +28,7 @@ parser = argparse.ArgumentParser(description='Point Cloud Attacking')
 parser.add_argument('--id', type=int, default=0, help='')
 parser.add_argument('--arch', default='PointNet', type=str, metavar='ARCH', help='')
 #------------Dataset-----------------------
-parser.add_argument('--data_dir_file', default='Data/modelnet10_250instances_1024.mat', type=str, help='')
+parser.add_argument('--data_dir_file', default='Data/modelnet10_250instances1024_PointNet.mat', type=str, help='')
 parser.add_argument('--dense_data_dir_file', default=None, type=str, help='')
 parser.add_argument('-c', '--classes', default=40, type=int, metavar='N', help='num of classes (default: 40)')
 parser.add_argument('-b', '--batch_size', default=2, type=int, metavar='B', help='batch_size (default: 2)')
