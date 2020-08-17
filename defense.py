@@ -119,8 +119,9 @@ def main():
                     fout.write('v %f %f %f 0 0 0\n' % (saved_pc[m, 0], saved_pc[m, 1], saved_pc[m, 2]))
                 fout.close()
 
-        print('[{0}/{1}]  defense acc: {2:.2f} attack acc: {3:.2f} avg drop num: {4:.2f}'.format(
-            i+1, len(test_loader), num_defense_success.item()/float(cnt)*100, num_attack_still_success.item()/float(cnt)*100,num_drop_point/float(cnt)))
+        if (i+1) % cfg.print_freq == 0:
+            print('[{0}/{1}]  defense acc: {2:.2f} attack acc: {3:.2f} avg drop num: {4:.2f}'.format(
+                i+1, len(test_loader), num_defense_success.item()/float(cnt)*100, num_attack_still_success.item()/float(cnt)*100,num_drop_point/float(cnt)))
 
 
     final_acc = num_defense_success.item()/float(test_loader.dataset.__len__())*100
@@ -170,6 +171,7 @@ if __name__ == '__main__':
     #------------OS-----------------------
     parser.add_argument('-j', '--num_workers', default=8, type=int, metavar='N', help='number of data loading workers (default: 8)')
     parser.add_argument('--random_seed', default=0, type=int, help='')
+    parser.add_argument('--print_freq', default=50, type=int, help='')
 
     cfg  = parser.parse_args()
     print(cfg)
