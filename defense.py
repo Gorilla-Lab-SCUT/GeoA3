@@ -120,14 +120,14 @@ def main():
                 fout.close()
 
         if (i+1) % cfg.print_freq == 0:
-            print('[{0}/{1}]  defense acc: {2:.2f} attack acc: {3:.2f} avg drop num: {4:.2f}'.format(
+            print('[{0}/{1}]  defense acc: {2:.2f} attack success: {3:.2f} avg drop num: {4:.2f}'.format(
                 i+1, len(test_loader), num_defense_success.item()/float(cnt)*100, num_attack_still_success.item()/float(cnt)*100,num_drop_point/float(cnt)))
 
 
     final_acc = num_defense_success.item()/float(test_loader.dataset.__len__())*100
     final_attack_acc = num_attack_still_success.item()/float(test_loader.dataset.__len__())*100
     avg_drop_point = num_drop_point/float(test_loader.dataset.__len__())
-    print('\nfinal defense acc: {0:.2f}\n attack acc: {1:.2f}\n avg drop point: {2:.2f}'.format(100-final_acc, final_attack_acc, avg_drop_point))
+    print('\nfinal defense wrong: {0:.2f}\n attack success: {1:.2f}\n avg drop point: {2:.2f}'.format(100-final_acc, final_attack_acc, avg_drop_point))
 
     with open(os.path.join(os.path.split(cfg.datadir)[0],  'defense_result.txt'), 'at') as f:
         if cfg.defense_type == 'rand_drop':
