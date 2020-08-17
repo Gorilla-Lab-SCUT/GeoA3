@@ -70,7 +70,14 @@ python main_attack.py --data_dir_file Data/modelnet10_250instances1024_DGCNN.mat
     --hd_loss_weight 0.1 \
     --curv_loss_weight 1.0 --curv_loss_knn 16
 # Robust Attack
-python main_attack.py --data_dir_file Data/modelnet10_250instances1024_DGCNN.mat --npoint 1024 --dense_data_dir_file Data/modelnet10_250instances10000_DGCNN.mat --is_save_normal --arch DGCNN --attack RA --attack_label All --binary_max_steps 5 --iter_max_steps 2500  --lr 1e-3 --cls_loss_type Margin --confidence 15 --dis_loss_type CD --dis_loss_weight 3.0 --knn_smoothing_loss_weight 5.0 --knn_smoothing_k 5 --knn_threshold_coef 1.1 --cc_linf 0.1
+python main_attack.py --data_dir_file Data/modelnet10_250instances1024_DGCNN.mat --npoint 1024 \
+    --dense_data_dir_file Data/modelnet10_250instances10000_DGCNN.mat --is_save_normal \
+    --arch DGCNN --attack RA --attack_label All \
+    --binary_max_steps 5 --iter_max_steps 2500  --lr 1e-3 \
+    --cls_loss_type Margin --confidence 15 \
+    --dis_loss_type CD --dis_loss_weight 3.0 \
+    --knn_smoothing_loss_weight 5.0 --knn_smoothing_k 5 --knn_threshold_coef 1.1 \
+    --cc_linf 0.1
 
 
 
@@ -78,7 +85,7 @@ python main_attack.py --data_dir_file Data/modelnet10_250instances1024_DGCNN.mat
 
 
 
-
+# For evaluating the \beta
 python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNet.mat --npoint 1024 --arch PointNet --attack GeoA3 --attack_label All --binary_max_steps 1 --iter_max_steps 2500 --initial_const 10 --lr 0.01 --cls_loss_type CE --dis_loss_type CD --dis_loss_weight 1.0 --hd_loss_weight 0.1 --curv_loss_weight 1.0 --curv_loss_knn 16 --id 1
 
 python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNet.mat --npoint 1024 --arch PointNet --attack GeoA3 --attack_label All --binary_max_steps 1 --iter_max_steps 2500 --initial_const 100 --lr 0.01 --cls_loss_type CE --dis_loss_type CD --dis_loss_weight 1.0 --hd_loss_weight 0.1 --curv_loss_weight 1.0 --curv_loss_knn 16 --id 1
