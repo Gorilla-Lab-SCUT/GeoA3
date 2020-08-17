@@ -41,7 +41,7 @@ python Provider/gen_data_mat.py --out_datadir ./Data -outc 10 -outn 25 --npoint 
 # GeoA3 attack
 python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNetPP.mat --npoint 1024 \
     --arch PointNetPP --attack GeoA3 --attack_label All \
-    --binary_max_steps 10 --iter_max_steps 500 --lr 0.01 \
+    --binary_max_steps 1 --iter_max_steps 500 --lr 1e-3 \
 	--cls_loss_type CE --dis_loss_type CD --dis_loss_weight 1.0 \
     --hd_loss_weight 0.1 \
     --curv_loss_weight 1.0 --curv_loss_knn 16
@@ -65,7 +65,7 @@ python defense.py --datadir Exps/PointNetPP_npoint1024/All/Pertub_0_BiStep10_Ite
 # GeoA3 attack
 python main_attack.py --data_dir_file Data/modelnet10_250instances1024_DGCNN.mat --npoint 1024 \
     --arch DGCNN --attack GeoA3 --attack_label All \
-    --binary_max_steps 10 --iter_max_steps 500 --lr 0.01 \
+    --binary_max_steps 10 --iter_max_steps 500 --lr 1e-3 \
 	--cls_loss_type CE --dis_loss_type CD --dis_loss_weight 1.0 \
     --hd_loss_weight 0.1 \
     --curv_loss_weight 1.0 --curv_loss_knn 16
