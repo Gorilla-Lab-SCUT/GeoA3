@@ -1,11 +1,12 @@
+import copy
+import math
 import os
+import shutil
 import sys
 import time
-import math
-import shutil
-import copy
-import numpy as np
 
+import numpy as np
+import scipy.io as sio
 import torch
 from torch.autograd import Variable
 import torchvision
@@ -15,7 +16,14 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn
-
+seaborn.set()
+seaborn.set(rc={'figure.figsize':(11.7000,8.27000)})
+linewidth = 4.0
+fontsize = 15.0 + 11.0
+markersize = 10.0
+fixpoint_markersize = 15.0
+bins=50
+color_list = ['r','b','g']
 
 def _normalize(input, p=2, dim=1, eps=1e-12):
     return input / input.norm(p, dim, keepdim=True).clamp(min=eps).expand_as(input)
@@ -292,6 +300,7 @@ class Training_aux(object):
         self.fsave = fsave
         if not os.path.exists(self.fsave):
             os.makedirs(self.fsave)
+
     def save_checkpoint(self, state, is_best, filename='checkpoint.pth.tar'):
         """Saves checkpoint to disk"""
         '''
@@ -360,3 +369,26 @@ class Training_aux(object):
 
         file.close()
         return
+
+class Count_converge_iter(object):
+    def __init__(self, fsave):
+        self.fsave = fsave
+        if not os.path.exists(self.fsave):
+            os.makedirs(self.fsave)
+        self.attack_step_list = []
+
+    def record_converge_iter(self, attack_step_list):
+        self.attack_step_list += attack_step_list
+
+    def save_converge_iter(self):
+        fpath = os.path.join(self.fsave, 'converge_iter.mat')
+        sio.savemat(fpath, {"attack_step_list": self.attack_step_list})
+
+    def plot_converge_iter_hist(self):
+        fpath = os.path.join(self.fsave, 'converge_iter.png')
+        fig = plt.figure()
+        ax = seaborn.distplot(self.attack_step_list)
+        ax.set_xlabel('Converged iteration', fontsize=fontsize)
+        ax.set_ylabel('Number of Samples', fontsize=fontsize)
+        plt.savefig(fpath)
+

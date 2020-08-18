@@ -147,7 +147,7 @@ def attack(net, input_data, cfg, i, loader_len):
 
     best_loss = [1e10] * b
     best_attack = torch.ones(b, 3, n).cuda()
-    best_attack_idx = [-1] * b
+    best_attack_step = [-1] * b
     best_attack_BS_idx = [-1] * b
 
     for search_step in range(cfg.binary_max_steps):
@@ -183,7 +183,7 @@ def attack(net, input_data, cfg, i, loader_len):
                         best_loss[k] = metric
                         best_attack[k] = input_all.data[k].clone()
                         best_attack_BS_idx[k] = search_step
-                        best_attack_idx[k] = step
+                        best_attack_step[k] = step
                     if _compare(output_label, target[k], gt_target[k].cuda(), targeted).item() and (metric <iter_best_loss[k]):
                         iter_best_loss[k] = metric
                         iter_best_score[k] = output_label
@@ -223,7 +223,7 @@ def attack(net, input_data, cfg, i, loader_len):
                 if upper_bound[k] < 1e9:
                     scale_const[k] = (lower_bound[k] + upper_bound[k]) * 0.5
 
-    return best_attack, target, (np.array(best_loss)<1e10)  #best_attack:[b, 3, n], target: [b], best_loss:[b]
+    return best_attack, target, (np.array(best_loss)<1e10), best_attack_step  #best_attack:[b, 3, n], target: [b], best_loss:[b], best_attack_step:[b]
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GEOA3 Point Cloud Attacking')

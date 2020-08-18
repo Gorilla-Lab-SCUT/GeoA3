@@ -15,7 +15,7 @@ from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
 from Attacker import geoA3_attack, robust_attack
-from Lib.utility import estimate_normal_via_ori_normal, _compare, farthest_points_sample
+from Lib.utility import estimate_normal_via_ori_normal, _compare, farthest_points_sample, Count_converge_iter
 
 ten_label_indexes = [0, 2, 4, 5, 8, 22, 30, 33, 35, 37]
 ten_label_names = ['airplane', 'bed', 'bookshelf', 'bottle', 'chair', 'monitor', 'sofa', 'table', 'toilet', 'vase']
@@ -66,6 +66,8 @@ parser.add_argument('--calculate_project_jitter_noise_iter', default=50, type=in
 parser.add_argument('--jitter_k', type=int, default=16, help='')
 parser.add_argument('--jitter_sigma', type=float, default=0.01, help='')
 parser.add_argument('--jitter_clip', type=float, default=0.05, help='')
+#------------Recording settings-------
+parser.add_argument('--is_record_converged_steps', action='store_true', default=False, help='')
 #------------OS-----------------------
 parser.add_argument('-j', '--num_workers', default=8, type=int, metavar='N', help='number of data loading workers (default: 8)')
 parser.add_argument('--is_save_normal', action='store_true', default=False, help='')
@@ -111,6 +113,9 @@ trg_dir = os.path.join(saved_dir, 'Mat')
 if not os.path.exists(trg_dir):
     os.makedirs(trg_dir)
 trg_dir = os.path.join(saved_dir, 'Obj')
+if not os.path.exists(trg_dir):
+    os.makedirs(trg_dir)
+trg_dir = os.path.join(saved_dir, 'Records')
 if not os.path.exists(trg_dir):
     os.makedirs(trg_dir)
 
@@ -196,6 +201,10 @@ def main():
     net.eval()
     print('\nSuccessfully load pretrained-model from {}\n'.format(model_path))
 
+    # recording settings
+    if cfg.is_record_converged_steps:
+        cci = Count_converge_iter(os.path.join(saved_dir, 'Records'))
+
     test_acc = Average_meter()
     batch_vertice = []
     batch_faces_idx = []
@@ -253,12 +262,14 @@ def main():
             print("Prec@1 {top1.avg:.3f}".format(top1=test_acc))
 
         elif cfg.attack == 'GeoA3':
-            adv_pc, targeted_label, attack_success_indicator  = geoA3_attack.attack(net, data, cfg, i, len(test_loader))
+            adv_pc, targeted_label, attack_success_indicator, best_attack_step = geoA3_attack.attack(net, data, cfg, i, len(test_loader))
             eval_num = 1
         elif cfg.attack == 'RA':
-            adv_pc, targeted_label, attack_success_indicator  = robust_attack.attack(net, dense_data, cfg, i, len(test_loader))
+            adv_pc, targeted_label, attack_success_indicator, best_attack_step = robust_attack.attack(net, dense_data, cfg, i, len(test_loader))
             eval_num = 16
         if cfg.attack == 'GeoA3' or cfg.attack == 'RA':
+            if cfg.is_record_converged_steps:
+                cci.record_converge_iter(best_attack_step)
             if cfg.is_save_normal:
                 with torch.no_grad():
                     # the loop here is for memory save
@@ -305,6 +316,10 @@ def main():
 
             cnt_ins = cnt_ins + bs
             cnt_all = cnt_all + b
+
+    if cfg.is_record_converged_steps:
+        cci.save_converge_iter()
+        cci.plot_converge_iter_hist()
 
     if cfg.attack == 'GeoA3':
         print('attack success: {0:.2f}\n'.format(num_attack_success/float(cnt_all)*100))
