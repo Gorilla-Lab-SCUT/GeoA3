@@ -22,7 +22,7 @@ linewidth = 4.0
 fontsize = 15.0 + 11.0
 markersize = 10.0
 fixpoint_markersize = 15.0
-bins=50
+bins=20
 color_list = ['r','b','g']
 
 def _normalize(input, p=2, dim=1, eps=1e-12):
@@ -378,6 +378,8 @@ class Count_converge_iter(object):
         self.attack_step_list = []
 
     def record_converge_iter(self, attack_step_list):
+        if -1 in attack_step_list:
+            attack_step_list.remove(-1)
         self.attack_step_list += attack_step_list
 
     def save_converge_iter(self):
@@ -386,8 +388,9 @@ class Count_converge_iter(object):
 
     def plot_converge_iter_hist(self):
         fpath = os.path.join(self.fsave, 'converge_iter.png')
+        used_bins=np.histogram(np.hstack((self.attack_step_list)), bins=bins)[1]
         fig = plt.figure()
-        ax = seaborn.distplot(self.attack_step_list)
+        ax = seaborn.distplot(self.attack_step_list, bins=used_bins)
         ax.set_xlabel('Converged iteration', fontsize=fontsize)
         ax.set_ylabel('Number of Samples', fontsize=fontsize)
         plt.savefig(fpath)
