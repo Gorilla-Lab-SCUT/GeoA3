@@ -21,8 +21,8 @@ from torch.autograd.gradcheck import zero_gradients
 
 from utility import _normalize, compute_theta_normal
 
-def norm_l2_loss(adv_pc, ori_pc, norm=2):
-    return ((adv_pc - ori_pc)**2 + 1e-10).sum(1).sum(1).sqrt()
+def norm_l2_loss(adv_pc, ori_pc):
+    return ((adv_pc - ori_pc)**2).sum(1).sum(1)
 
 def chamfer_loss(adv_pc, ori_pc):
     # Chamfer distance (two sides)

@@ -14,7 +14,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
-from Attacker import geoA3_attack, robust_attack
+from Attacker import geoA3_attack, Xiang_attack, robust_attack
 from Lib.utility import estimate_normal_via_ori_normal, _compare, farthest_points_sample, Count_converge_iter
 
 ten_label_indexes = [0, 2, 4, 5, 8, 22, 30, 33, 35, 37]
@@ -34,7 +34,7 @@ parser.add_argument('-c', '--classes', default=40, type=int, metavar='N', help='
 parser.add_argument('-b', '--batch_size', default=2, type=int, metavar='B', help='batch_size (default: 2)')
 parser.add_argument('--npoint', default=1024, type=int, help='')
 #------------Attack-----------------------
-parser.add_argument('--attack', default=None, type=str, help='GeoA3 | RA')
+parser.add_argument('--attack', default=None, type=str, help='GeoA3 | Xiang | RA')
 parser.add_argument('--attack_label', default='All', type=str, help='[All; ...; Untarget]')
 parser.add_argument('--binary_max_steps', type=int, default=10, help='')
 parser.add_argument('--initial_const', type=float, default=10, help='')
@@ -96,7 +96,6 @@ if cfg.attack == 'RA':
         saved_dir = saved_dir + '_KnnLoss' + str(cfg.knn_smoothing_loss_weight) + '_k' + str(cfg.knn_smoothing_k) + '_coe' + str(cfg.knn_threshold_coef)
     if cfg.cc_linf != 0:
         saved_dir = saved_dir + '_cclinf' + str(cfg.cc_linf)
-
 
 if cfg.is_pre_jitter_input:
     saved_dir = saved_dir + '_PreJitter' + str(cfg.jitter_sigma) + '_' + str(cfg.jitter_clip)
@@ -264,10 +263,14 @@ def main():
         elif cfg.attack == 'GeoA3':
             adv_pc, targeted_label, attack_success_indicator, best_attack_step = geoA3_attack.attack(net, data, cfg, i, len(test_loader))
             eval_num = 1
+        elif cfg.attack == 'Xiang':
+            adv_pc, targeted_label, attack_success_indicator, best_attack_step = Xiang_attack.attack(net, dense_data, cfg, i, len(test_loader))
+            eval_num = 1
         elif cfg.attack == 'RA':
             adv_pc, targeted_label, attack_success_indicator, best_attack_step = robust_attack.attack(net, dense_data, cfg, i, len(test_loader))
             eval_num = 16
-        if cfg.attack == 'GeoA3' or cfg.attack == 'RA':
+
+        if cfg.attack == 'GeoA3' or cfg.attack == 'RA' or cfg.attack == 'Xiang':
             if cfg.is_record_converged_steps:
                 cci.record_converge_iter(best_attack_step)
             if cfg.is_save_normal:
@@ -321,7 +324,7 @@ def main():
         cci.save_converge_iter()
         cci.plot_converge_iter_hist()
 
-    if cfg.attack == 'GeoA3':
+    if cfg.attack == 'GeoA3' or cfg.attack == 'RA' or cfg.attack == 'Xiang':
         print('attack success: {0:.2f}\n'.format(num_attack_success/float(cnt_all)*100))
         with open(os.path.join(saved_dir, 'attack_result.txt'), 'at') as f:
             f.write('attack success: {0:.2f}\n'.format(num_attack_success/float(cnt_all)*100))
