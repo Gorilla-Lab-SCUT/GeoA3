@@ -176,7 +176,7 @@ def attack(net, input_data, cfg, i, loader_len):
     return best_attack, target, (np.array(best_loss)<1e10), best_attack_step  #best_attack:[b, 3, n], target: [b], best_loss:[b], best_attack_step:[b]
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Xiang\'s method Point Cloud Attacking')
+    parser = argparse.ArgumentParser(description='Xiang\'s method (CW-l2) Point Cloud Attacking')
     #------------Model-----------------------
     parser.add_argument('--arch', default='PointNet', type=str, metavar='ARCH', help='')
     #------------Dataset-----------------------
@@ -198,7 +198,7 @@ if __name__ == '__main__':
     ## distance loss
     parser.add_argument('--dis_loss_weight', type=float, default=1.0, help='')
     ## eval metric
-    parser.add_argument('--metric', default='Loss', type=str, help='[Loss | L2 ]')
+    parser.add_argument('--metric', default='L2', type=str, help='[Loss | L2 ]')
     #------------OS-----------------------
     parser.add_argument('-j', '--num_workers', default=8, type=int, metavar='N', help='number of data loading workers (default: 8)')
     cfg  = parser.parse_args()

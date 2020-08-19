@@ -28,6 +28,10 @@ python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNet.
     --dis_loss_type CD --dis_loss_weight 3.0 \
     --knn_smoothing_loss_weight 5.0 --knn_smoothing_k 5 --knn_threshold_coef 1.1 \
     --cc_linf 0.1
+## Liu's attack
+python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNet.mat --npoint 1024 \
+    --arch PointNet --attack Liu --attack_label All \
+    --iter_max_steps 500 --step_alpha 5
 
 ## Defense
 python defense.py --datadir Exps/PointNet_npoint1024/All/Pertub_0_BiStep10_IterStep500_Optadam_Lr0.01_Initcons10_CE_CDLoss1.0_HDLoss0.1_CurLoss1.0_k16/Mat \
@@ -69,6 +73,10 @@ python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNetP
     --dis_loss_type CD --dis_loss_weight 3.0 \
     --knn_smoothing_loss_weight 5.0 --knn_smoothing_k 5 --knn_threshold_coef 1.1 \
     --cc_linf 0.1
+## Liu's attack
+python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNetPP.mat --npoint 1024 \
+    --arch PointNetPP --attack Liu --attack_label All \
+    --iter_max_steps 500 --step_alpha 5
 
 ## Defense
 python defense.py --datadir Exps/PointNetPP_npoint1024/All/Pertub_0_BiStep10_IterStep500_Optadam_Lr0.01_Initcons10_CE_CDLoss1.0_HDLoss0.1_CurLoss1.0_k16/Mat \
@@ -101,9 +109,10 @@ python main_attack.py --data_dir_file Data/modelnet10_250instances1024_DGCNN.mat
     --dis_loss_type CD --dis_loss_weight 3.0 \
     --knn_smoothing_loss_weight 5.0 --knn_smoothing_k 5 --knn_threshold_coef 1.1 \
     --cc_linf 0.1
-
-
-
+## Liu's attack
+python main_attack.py --data_dir_file Data/modelnet10_250instances1024_DGCNN.mat --npoint 1024 \
+    --arch DGCNN --attack Liu --attack_label All \
+    --iter_max_steps 500 --step_alpha 5
 
 
 

@@ -14,7 +14,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
-from Attacker import geoA3_attack, Xiang_attack, robust_attack
+from Attacker import geoA3_attack, Xiang_attack, robust_attack, Liu_attack
 from Lib.utility import estimate_normal_via_ori_normal, _compare, farthest_points_sample, Count_converge_iter
 
 ten_label_indexes = [0, 2, 4, 5, 8, 22, 30, 33, 35, 37]
@@ -34,7 +34,7 @@ parser.add_argument('-c', '--classes', default=40, type=int, metavar='N', help='
 parser.add_argument('-b', '--batch_size', default=2, type=int, metavar='B', help='batch_size (default: 2)')
 parser.add_argument('--npoint', default=1024, type=int, help='')
 #------------Attack-----------------------
-parser.add_argument('--attack', default=None, type=str, help='GeoA3 | Xiang | RA')
+parser.add_argument('--attack', default=None, type=str, help='GeoA3 | Xiang | RA | Liu')
 parser.add_argument('--attack_label', default='All', type=str, help='[All; ...; Untarget]')
 parser.add_argument('--binary_max_steps', type=int, default=10, help='')
 parser.add_argument('--initial_const', type=float, default=10, help='')
@@ -66,6 +66,8 @@ parser.add_argument('--calculate_project_jitter_noise_iter', default=50, type=in
 parser.add_argument('--jitter_k', type=int, default=16, help='')
 parser.add_argument('--jitter_sigma', type=float, default=0.01, help='')
 parser.add_argument('--jitter_clip', type=float, default=0.05, help='')
+## PGD-like attack
+parser.add_argument('--step_alpha', type=float, default=5, help='')
 #------------Recording settings-------
 parser.add_argument('--is_record_converged_steps', action='store_true', default=False, help='')
 #------------OS-----------------------
@@ -82,27 +84,35 @@ else:
 
 saved_root = os.path.join('Exps', cfg.arch + '_npoint' + str(cfg.npoint))
 
-saved_dir = str(cfg.attack) + '_' +  str(cfg.id) +  '_BiStep' + str(cfg.binary_max_steps) + '_IterStep' + str(cfg.iter_max_steps) + '_Opt' + cfg.optim  +  '_Lr' + str(cfg.lr) + '_Initcons' + str(cfg.initial_const) + '_' + cfg.cls_loss_type + '_' + str(cfg.dis_loss_type) + 'Loss' + str(cfg.dis_loss_weight)
+if cfg.attack == 'GeoA3' or cfg.attack == 'Xiang' or cfg.attack == 'RA':
+    saved_dir = str(cfg.attack) + '_' +  str(cfg.id) +  '_BiStep' + str(cfg.binary_max_steps) + '_IterStep' + str(cfg.iter_max_steps) + '_Opt' + cfg.optim  +  '_Lr' + str(cfg.lr) + '_Initcons' + str(cfg.initial_const) + '_' + cfg.cls_loss_type + '_' + str(cfg.dis_loss_type) + 'Loss' + str(cfg.dis_loss_weight)
 
-if cfg.attack == 'GeoA3':
-    if cfg.hd_loss_weight != 0:
-        saved_dir = saved_dir + '_HDLoss' + str(cfg.hd_loss_weight)
+    if cfg.attack == 'GeoA3':
+        if cfg.hd_loss_weight != 0:
+            saved_dir = saved_dir + '_HDLoss' + str(cfg.hd_loss_weight)
 
-    if cfg.curv_loss_weight != 0:
-        saved_dir = saved_dir + '_CurLoss' + str(cfg.curv_loss_weight) + '_k' + str(cfg.curv_loss_knn)
+        if cfg.curv_loss_weight != 0:
+            saved_dir = saved_dir + '_CurLoss' + str(cfg.curv_loss_weight) + '_k' + str(cfg.curv_loss_knn)
 
-if cfg.attack == 'RA':
-    if cfg.knn_smoothing_loss_weight != 0:
-        saved_dir = saved_dir + '_KnnLoss' + str(cfg.knn_smoothing_loss_weight) + '_k' + str(cfg.knn_smoothing_k) + '_coe' + str(cfg.knn_threshold_coef)
-    if cfg.cc_linf != 0:
-        saved_dir = saved_dir + '_cclinf' + str(cfg.cc_linf)
+        if cfg.is_pre_jitter_input:
+            saved_dir = saved_dir + '_PreJitter' + str(cfg.jitter_sigma) + '_' + str(cfg.jitter_clip)
+            if cfg.is_previous_jitter_input:
+                saved_dir = saved_dir + '_PreviousMethod'
+            else:
+                saved_dir = saved_dir + '_estNormalVery' + str(cfg.calculate_project_jitter_noise_iter)
 
-if cfg.is_pre_jitter_input:
-    saved_dir = saved_dir + '_PreJitter' + str(cfg.jitter_sigma) + '_' + str(cfg.jitter_clip)
-    if cfg.is_previous_jitter_input:
-        saved_dir = saved_dir + '_PreviousMethod'
-    else:
-        saved_dir = saved_dir + '_estNormalVery' + str(cfg.calculate_project_jitter_noise_iter)
+    if cfg.attack == 'RA':
+        if cfg.knn_smoothing_loss_weight != 0:
+            saved_dir = saved_dir + '_KnnLoss' + str(cfg.knn_smoothing_loss_weight) + '_k' + str(cfg.knn_smoothing_k) + '_coe' + str(cfg.knn_threshold_coef)
+        if cfg.cc_linf != 0:
+            saved_dir = saved_dir + '_cclinf' + str(cfg.cc_linf)
+
+elif cfg.attack == 'Liu':
+    saved_dir = str(cfg.attack) + '_' +  str(cfg.id) + '_IterStep' + str(cfg.iter_max_steps) + '_StepAlpha' + str(cfg.step_alpha)
+
+else:
+    assert cfg.attack == None
+    saved_dir = 'Evaluating_' + str(cfg.id)
 
 saved_dir = os.path.join(saved_root, cfg.attack_label, saved_dir)
 
@@ -269,8 +279,11 @@ def main():
         elif cfg.attack == 'RA':
             adv_pc, targeted_label, attack_success_indicator, best_attack_step = robust_attack.attack(net, dense_data, cfg, i, len(test_loader))
             eval_num = 16
+        elif cfg.attack == 'Liu':
+            adv_pc, targeted_label, attack_success_indicator, best_attack_step = Liu_attack.attack(net, dense_data, cfg, i, len(test_loader))
+            eval_num = 1
 
-        if cfg.attack == 'GeoA3' or cfg.attack == 'RA' or cfg.attack == 'Xiang':
+        if cfg.attack == 'GeoA3' or cfg.attack == 'RA' or cfg.attack == 'Xiang' or cfg.attack == 'Liu':
             if cfg.is_record_converged_steps:
                 cci.record_converge_iter(best_attack_step)
             if cfg.is_save_normal:
@@ -324,7 +337,7 @@ def main():
         cci.save_converge_iter()
         cci.plot_converge_iter_hist()
 
-    if cfg.attack == 'GeoA3' or cfg.attack == 'RA' or cfg.attack == 'Xiang':
+    if cfg.attack == 'GeoA3' or cfg.attack == 'RA' or cfg.attack == 'Xiang' or cfg.attack == 'Liu':
         print('attack success: {0:.2f}\n'.format(num_attack_success/float(cnt_all)*100))
         with open(os.path.join(saved_dir, 'attack_result.txt'), 'at') as f:
             f.write('attack success: {0:.2f}\n'.format(num_attack_success/float(cnt_all)*100))
