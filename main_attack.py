@@ -8,13 +8,15 @@ import time
 
 import numpy as np
 import scipy.io as sio
+from pytorch3d.io import load_obj, save_obj
+from pytorch3d.structures import Meshes
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
-from Attacker import geoA3_attack, Xiang_attack, robust_attack, Liu_attack
+from Attacker import geoA3_attack, Xiang_attack, robust_attack, Liu_attack, geoA3_mesh_attack
 from Lib.utility import estimate_normal_via_ori_normal, _compare, farthest_points_sample, Count_converge_iter
 
 ten_label_indexes = [0, 2, 4, 5, 8, 22, 30, 33, 35, 37]
@@ -34,7 +36,7 @@ parser.add_argument('-c', '--classes', default=40, type=int, metavar='N', help='
 parser.add_argument('-b', '--batch_size', default=2, type=int, metavar='B', help='batch_size (default: 2)')
 parser.add_argument('--npoint', default=1024, type=int, help='')
 #------------Attack-----------------------
-parser.add_argument('--attack', default=None, type=str, help='GeoA3 | Xiang | RA | Liu')
+parser.add_argument('--attack', default=None, type=str, help='GeoA3 | Xiang | RA | Liu | GeoA3_mesh')
 parser.add_argument('--attack_label', default='All', type=str, help='[All; ...; Untarget]')
 parser.add_argument('--binary_max_steps', type=int, default=10, help='')
 parser.add_argument('--initial_const', type=float, default=10, help='')
@@ -73,6 +75,7 @@ parser.add_argument('--is_record_converged_steps', action='store_true', default=
 #------------OS-----------------------
 parser.add_argument('-j', '--num_workers', default=8, type=int, metavar='N', help='number of data loading workers (default: 8)')
 parser.add_argument('--is_save_normal', action='store_true', default=False, help='')
+parser.add_argument('--is_debug', action='store_true', default=False, help='')
 
 cfg  = parser.parse_args()
 print(cfg, '\n')
@@ -84,10 +87,10 @@ else:
 
 saved_root = os.path.join('Exps', cfg.arch + '_npoint' + str(cfg.npoint))
 
-if cfg.attack == 'GeoA3' or cfg.attack == 'Xiang' or cfg.attack == 'RA':
+if cfg.attack == 'GeoA3' or cfg.attack == 'Xiang' or cfg.attack == 'RA' or cfg.attack == 'GeoA3_mesh':
     saved_dir = str(cfg.attack) + '_' +  str(cfg.id) +  '_BiStep' + str(cfg.binary_max_steps) + '_IterStep' + str(cfg.iter_max_steps) + '_Opt' + cfg.optim  +  '_Lr' + str(cfg.lr) + '_Initcons' + str(cfg.initial_const) + '_' + cfg.cls_loss_type + '_' + str(cfg.dis_loss_type) + 'Loss' + str(cfg.dis_loss_weight)
 
-    if cfg.attack == 'GeoA3':
+    if cfg.attack == 'GeoA3' or cfg.attack == 'GeoA3_mesh':
         if cfg.hd_loss_weight != 0:
             saved_dir = saved_dir + '_HDLoss' + str(cfg.hd_loss_weight)
 
@@ -118,10 +121,13 @@ saved_dir = os.path.join(saved_root, cfg.attack_label, saved_dir)
 
 print(saved_dir)
 
-trg_dir = os.path.join(saved_dir, 'Mat')
+if cfg.attack == 'GeoA3_mesh':
+    trg_dir = os.path.join(saved_dir, 'Mesh')
+else:
+    trg_dir = os.path.join(saved_dir, 'Obj')
 if not os.path.exists(trg_dir):
     os.makedirs(trg_dir)
-trg_dir = os.path.join(saved_dir, 'Obj')
+trg_dir = os.path.join(saved_dir, 'Mat')
 if not os.path.exists(trg_dir):
     os.makedirs(trg_dir)
 trg_dir = os.path.join(saved_dir, 'Records')
@@ -169,13 +175,17 @@ def main():
     torch.cuda.manual_seed_all(seed)
 
     #data
-    from Provider.modelnet10_instance250 import ModelNet40
-    if (str(cfg.npoint) in cfg.data_dir_file) or cfg.is_random_sampling:
-        resample_num = -1
+    if cfg.attack == 'GeoA3_mesh':
+        from Provider.modelnet10_instance250_mesh import ModelNet10_250instance_mesh
+        test_dataset = ModelNet10_250instance_mesh(resume=cfg.data_dir_file, attack_label= cfg.attack_label)
     else:
-        resample_num = cfg.npoint
+        if (str(cfg.npoint) in cfg.data_dir_file):
+            resample_num = -1
+        else:
+            resample_num = cfg.npoint
 
-    test_dataset = ModelNet40(data_mat_file=cfg.data_dir_file, attack_label=cfg.attack_label, resample_num=resample_num)
+        from Provider.modelnet10_instance250 import ModelNet40
+        test_dataset = ModelNet40(data_mat_file=cfg.data_dir_file, attack_label=cfg.attack_label, resample_num=resample_num)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=cfg.batch_size, shuffle=False, drop_last=False, num_workers=cfg.num_workers, pin_memory=True)
     test_size = test_dataset.__len__()
 
@@ -225,47 +235,51 @@ def main():
 
     if cfg.attack_label == 'Untarget':
         targeted = False
+        num_attack_classes = 1
     else:
         targeted = True
+        num_attack_classes = 9
 
     for i, data in enumerate(test_loader):
         #print('[{0}/{1}]:'.format(i, test_loader.__len__()), end='')
-        pc = data[0]
-        normal = data[1]
-        gt_labels = data[2]
-        if pc.size(3) == 3:
-            pc = pc.permute(0,1,3,2)
-        if normal.size(3) == 3:
-            normal = normal.permute(0,1,3,2)
+        if cfg.attack == 'GeoA3_mesh':
+            _, _, gt_label = data[0], data[1], data[2]
+            gt_target = gt_label.view(-1).cuda()
+        else:
+            pc = data[0]
+            normal = data[1]
+            gt_labels = data[2]
+            if pc.size(3) == 3:
+                pc = pc.permute(0,1,3,2)
+            if normal.size(3) == 3:
+                normal = normal.permute(0,1,3,2)
 
-        bs, l, _, n = pc.size()
-        b = bs*l
-
-        pc = pc.view(b, 3, n).cuda()
-        normal = normal.view(b, 3, n).cuda()
-        gt_target = gt_labels.view(-1).cuda()
-        pc_ori_var = Variable(pc.clone(), requires_grad=False)
-        normal_var = Variable(normal.clone(), requires_grad=False)
-
-        if dense_iter is not None:
-            dense_data = dense_iter.next()
-            dense_point = dense_data[0]
-            dense_normal = dense_data[1]
-
-            if dense_point.size(3) == 3:
-                dense_point = dense_point.permute(0,1,3,2)
-            if dense_normal.size(3) == 3:
-                dense_normal = dense_normal.permute(0,1,3,2)
-
-            bs, l, _, n = dense_point.size()
+            bs, l, _, n = pc.size()
             b = bs*l
 
-            dense_point = dense_point.view(b, 3, n).cuda()
-            dense_normal = dense_normal.view(b, 3, n).cuda()
+            pc = pc.view(b, 3, n).cuda()
+            normal = normal.view(b, 3, n).cuda()
+            gt_target = gt_labels.view(-1).cuda()
+
+            if dense_iter is not None:
+                dense_data = dense_iter.next()
+                dense_point = dense_data[0]
+                dense_normal = dense_data[1]
+
+                if dense_point.size(3) == 3:
+                    dense_point = dense_point.permute(0,1,3,2)
+                if dense_normal.size(3) == 3:
+                    dense_normal = dense_normal.permute(0,1,3,2)
+
+                bs, l, _, n = dense_point.size()
+                b = bs*l
+
+                dense_point = dense_point.view(b, 3, n).cuda()
+                dense_normal = dense_normal.view(b, 3, n).cuda()
 
         if cfg.attack is None:
             with torch.no_grad():
-                output = net(pc_ori_var)
+                output = net(pc)
             acc = accuracy(output.data, gt_target.data, topk=(1, ))
             test_acc.update(acc[0][0], output.size(0))
             print("Prec@1 {top1.avg:.3f}".format(top1=test_acc))
@@ -282,6 +296,11 @@ def main():
         elif cfg.attack == 'Liu':
             adv_pc, targeted_label, attack_success_indicator, best_attack_step = Liu_attack.attack(net, data, cfg, i, len(test_loader))
             eval_num = 1
+        elif cfg.attack == 'GeoA3_mesh':
+            adv_mesh, targeted_label, attack_success_indicator, best_attack_step, best_score = geoA3_mesh_attack.attack(net, data, cfg, i, len(test_loader), saved_dir)
+            eval_num = 1
+        else:
+            assert False, "Wrong type of attack."
 
         if cfg.attack == 'GeoA3' or cfg.attack == 'RA' or cfg.attack == 'Xiang' or cfg.attack == 'Liu':
             if cfg.is_record_converged_steps:
@@ -312,11 +331,7 @@ def main():
             for k in range(b):
                 if attack_success[k].item() and attack_success_indicator[k]:
                     num_attack_success += 1
-                    if targeted:
-                        name = 'adv_' + str(cnt_ins+k//9)
-                    else:
-                        name = 'adv_' + str(cnt_ins+k)
-                    name = name + '_gt' + str(gt_target[k].item()) + '_attack' + str(torch.max(test_adv_output,1)[1].data[k].item())
+                    name = 'adv_' + str(cnt_ins+k//num_attack_classes) + '_gt' + str(gt_target[k].item()) + '_attack' + str(torch.max(test_adv_output,1)[1].data[k].item())
 
                     if cfg.is_save_normal:
                         sio.savemat(os.path.join(saved_dir, 'Mat', name+'.mat'),
@@ -329,6 +344,19 @@ def main():
                     for m in range(saved_pc.shape[2]):
                         fout.write('v %f %f %f 0 0 0\n' % (saved_pc[k, 0, m], saved_pc[k, 1, m], saved_pc[k, 2, m]))
                     fout.close()
+
+            cnt_ins = cnt_ins + bs
+            cnt_all = cnt_all + b
+        elif cfg.attack == 'GeoA3_mesh':
+            if attack_success_indicator[k].item() and best_score[k] != -1:
+                num_attack_success += 1
+                name = 'adv_' + str(cnt_ins+k//num_attack_classes) + '_gt' + str(gt_target[k].item()) + '_attack' + str(best_score[k])
+                final_verts, final_faces = adv_mesh[k].get_mesh_verts_faces(0)
+                #save .mat
+                sio.savemat(os.path.join(saved_dir, 'Mat', name+'.mat'), {"vert": final_verts, "faces":final_faces})
+                #save .obj mesh
+                file_name = os.path.join(saved_dir, 'Mesh', name+'.obj')
+                save_obj(file_name, final_verts, final_faces)
 
             cnt_ins = cnt_ins + bs
             cnt_all = cnt_all + b
