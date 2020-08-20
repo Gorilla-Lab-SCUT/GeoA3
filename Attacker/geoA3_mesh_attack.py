@@ -9,6 +9,7 @@ import time
 import numpy as np
 import scipy.io as sio
 from pytorch3d.io import load_obj, save_obj
+from pytorch3d.loss import chamfer_distance, mesh_edge_loss, mesh_laplacian_smoothing, mesh_normal_consistency
 from pytorch3d.ops import sample_points_from_meshes
 from pytorch3d.structures import Meshes, join_meshes_as_batch
 import torch
@@ -22,10 +23,10 @@ ROOT_DIR = BASE_DIR + '/../'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
-from utility import compute_theta_normal, estimate_normal, estimate_perpendicular, _compare
+from utility import compute_theta_normal, estimate_normal, estimate_perpendicular, _compare, pad_larger_tensor_with_index
 from loss_utils import chamfer_loss, hausdorff_loss, normal_loss
 
-def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, target, scale_const, cfg, targeted):
+def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, new_src_mesh, target, scale_const, cfg, targeted):
     #needed cfg:[arch, classes, cls_loss_type, confidence, dis_loss_type, is_cd_single_side, dis_loss_weight, hd_loss_weight, curv_loss_weight, curv_loss_knn]
     b,_,n=input_curr_iter.size()
     output_curr_iter = net(input_curr_iter)
@@ -99,6 +100,11 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, 
     else:
         curv_loss = 0
 
+    if cfg.laplacian_loss_weight !=0:
+        laplacian_loss = mesh_laplacian_smoothing(new_src_mesh, method="uniform")
+        constrain_loss = constrain_loss + cfg.laplacian_loss_weight * laplacian_loss
+        info = info+'Laplacian_loss : {0:6.3f} | '.format(cfg.laplacian_loss_weight * (laplacian_loss).mean().item())
+
     scale_const = scale_const.float().cuda()
     loss_n = cls_loss + scale_const * constrain_loss
     loss = loss_n.mean()
@@ -153,18 +159,6 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir):
         iter_best_score = [-1] * b
         constrain_loss = torch.ones(b) * 1e10
 
-        deform_verts = torch.zeros(src_mesh.verts_packed().shape).cuda()
-        nn.init.normal_(deform_verts, mean=0, std=1e-3)
-        deform_verts = deform_verts.requires_grad_()
-
-        if cfg.optim == 'adam':
-            optimizer = torch.optim.Adam([deform_verts], lr=cfg.lr)
-        elif cfg.optim == 'sgd':
-            optimizer = torch.optim.SGD([deform_verts], lr=cfg.lr, momentum=0.9)
-        else:
-            assert False, 'Wrong optimizer!'
-
-        #lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9990, last_epoch=-1)
 
         pc_ori = sample_points_from_meshes(src_mesh, 1024).permute(0,2,1)
         if cfg.curv_loss_weight !=0:
@@ -173,8 +167,93 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir):
         else:
             theta_normal = None
 
+        if cfg.is_partial_var:
+            with torch.no_grad():
+                e0, e1 = src_mesh.edges_packed().unbind(1)  #e0 works as the index for the anchor points, and e1 works as the adj_point_idx to the anchor points (without repeat).
+
+                idx01 = torch.stack([e0, e1], dim=1)  # (sum(E_n), 2)
+                idx10 = torch.stack([e1, e0], dim=1)  # (sum(E_n), 2)
+                idx = torch.cat([idx01, idx10], dim=0).t()  # (2, 2*sum(E_n))
+
+        # deform_verts = torch.zeros(src_mesh.verts_packed().shape).cuda()
+        # nn.init.normal_(deform_verts, mean=0, std=1e-3)
+        # deform_verts = deform_verts.requires_grad_()
+
+        # if cfg.optim == 'adam':
+        #     optimizer = torch.optim.Adam([deform_verts], lr=cfg.lr)
+        # elif cfg.optim == 'sgd':
+        #     optimizer = torch.optim.SGD([deform_verts], lr=cfg.lr, momentum=0.9)
+        # else:
+        #     assert False, 'Wrong optimizer!'
+        #lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9990, last_epoch=-1)
+
         attack_success = torch.zeros(b).cuda()
         for step in range(cfg.iter_max_steps):
+
+            if cfg.is_partial_var:
+                if step%50 == 0:
+                    with torch.no_grad():
+                        #FIXME: how about using the critical points?
+                        init_point = np.random.randint(src_mesh.verts_packed().shape[0])
+                        #FIXME: BFS or DFS?
+                        involved_idx_list = []
+                        visited_idx_list = []
+                        involved_idx_list.append(init_point)
+                        last_involved_idx_list = involved_idx_list
+                        for _ in range(cfg.knn_range):
+                            iter_involved_idx_list = []
+                            for involved_idx in last_involved_idx_list:
+                                if involved_idx not in visited_idx_list:
+                                    visited_idx_list.append(involved_idx)
+                                    iter_idx_list = (idx == involved_idx).nonzero()
+                                    iter_idx_list = iter_idx_list[:int(iter_idx_list.size(0)/2),:]
+
+                                    iter_eachpoint_involved_idx_list = idx[1,iter_idx_list[:, 1]].tolist()
+                                    # yields the elements in `iter_eachpoint_involved_idx_list` that are NOT in `involved_idx_list`
+                                    iter_involved_idx_list += np.setdiff1d(iter_eachpoint_involved_idx_list,involved_idx_list).tolist()
+
+                            last_involved_idx_list = iter_involved_idx_list
+                            involved_idx_list = involved_idx_list + iter_involved_idx_list
+
+                    deform_verts = torch.zeros(involved_idx_list.__len__(), 3).cuda()
+                    nn.init.normal_(deform_verts, mean=0, std=1e-3)
+                    deform_verts = deform_verts.requires_grad_()
+                    if cfg.optim == 'adam':
+                        optimizer = torch.optim.Adam([deform_verts], lr=cfg.lr)
+                    elif cfg.optim == 'sgd':
+                        optimizer = torch.optim.SGD([deform_verts], lr=cfg.lr, momentum=0.9)
+                    else:
+                        assert False, 'Wrong optimizer!'
+                    lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9990, last_epoch=-1)
+
+                    try:
+                        with torch.no_grad():
+                            periodical_src_mesh = new_src_mesh.clone()
+                    except:
+                        periodical_src_mesh = src_mesh.clone()
+
+            else:
+                deform_verts = torch.zeros(src_mesh.verts_packed().shape).cuda()
+                nn.init.normal_(deform_verts, mean=0, std=1e-3)
+                deform_verts = deform_verts.requires_grad_()
+                if cfg.optim == 'adam':
+                    optimizer = torch.optim.Adam([deform_verts], lr=cfg.lr)
+                elif cfg.optim == 'sgd':
+                    optimizer = torch.optim.SGD([deform_verts], lr=cfg.lr, momentum=0.9)
+                else:
+                    assert False, 'Wrong optimizer!'
+                lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9990, last_epoch=-1)
+
+            if cfg.is_partial_var:
+                full_deform_verts = pad_larger_tensor_with_index(deform_verts, involved_idx_list, src_mesh.verts_packed().shape[0])
+                new_src_mesh = periodical_src_mesh.offset_verts(full_deform_verts)
+            else:
+                new_src_mesh = src_mesh.offset_verts(deform_verts)
+
+            # new_src_mesh = src_mesh.offset_verts(deform_verts)
+            input_curr_iter = sample_points_from_meshes(new_src_mesh, 1024).permute(0,2,1)
+            normal_curr_iter = estimate_normal(input_curr_iter, k=8)
+
             # for saving
             if (step%50 == 0) and cfg.is_debug:
                 if (step == 0):
@@ -186,13 +265,12 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir):
                     final_verts, final_faces = src_mesh.offset_verts(deform_verts).get_mesh_verts_faces(0)
                     save_obj(file_name, final_verts, final_faces)
 
-            if step%50 == 0:
-                new_src_mesh = src_mesh.offset_verts(deform_verts)
-            input_curr_iter = sample_points_from_meshes(new_src_mesh, 1024).permute(0,2,1)
-            normal_curr_iter = estimate_normal(input_curr_iter, k=8)
-
             with torch.no_grad():
-                eval_meshes = src_mesh.offset_verts(deform_verts)
+                if cfg.is_partial_var:
+                    eval_full_deform_verts = pad_larger_tensor_with_index(deform_verts, involved_idx_list, src_mesh.verts_packed().shape[0])
+                    eval_meshes = periodical_src_mesh.offset_verts(eval_full_deform_verts)
+                else:
+                    eval_meshes = src_mesh.offset_verts(deform_verts)
 
                 for k in range(b):
                     batch_k_meshes = join_meshes_as_batch([eval_meshes[k]]*eval_num)
@@ -218,12 +296,13 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir):
                         iter_best_loss[k] = metric
                         iter_best_score[k] = torch.max(batch_k_adv_output,1)[1].mode().values.item()
 
-            _, loss, dis_loss, hd_loss, nor_loss, constrain_loss, info = _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, target, scale_const, cfg, targeted)
+            _, loss, dis_loss, hd_loss, nor_loss, constrain_loss, info = _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, new_src_mesh, target, scale_const, cfg, targeted)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            #lr_scheduler.step()
+            if cfg.is_use_lr_scheduler:
+                lr_scheduler.step()
 
             info = '[{5}/{6}][{0}/{1}][{2}/{3}] \t loss: {4:6.4f}\t'.format(search_step+1, cfg.binary_max_steps, step+1, cfg.iter_max_steps, loss.item(), i, loader_len) + info
 

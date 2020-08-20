@@ -196,6 +196,11 @@ def farthest_points_sample(obj_points, num_points):
 
     return res_points
 
+def pad_larger_tensor_with_index(small_verts, small_in_larger_idx_list, larger_tensor_shape):
+    full_deform_verts = torch.zeros(larger_tensor_shape,3).cuda()
+    full_deform_verts[small_in_larger_idx_list] = small_verts
+    return full_deform_verts
+
 _, term_width = os.popen('stty size', 'r').read().split()
 term_width = int(term_width)
 TOTAL_BAR_LENGTH = 30.
