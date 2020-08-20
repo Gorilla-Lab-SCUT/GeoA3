@@ -274,13 +274,13 @@ def main():
             adv_pc, targeted_label, attack_success_indicator, best_attack_step = geoA3_attack.attack(net, data, cfg, i, len(test_loader))
             eval_num = 1
         elif cfg.attack == 'Xiang':
-            adv_pc, targeted_label, attack_success_indicator, best_attack_step = Xiang_attack.attack(net, dense_data, cfg, i, len(test_loader))
+            adv_pc, targeted_label, attack_success_indicator, best_attack_step = Xiang_attack.attack(net, data, cfg, i, len(test_loader))
             eval_num = 1
         elif cfg.attack == 'RA':
             adv_pc, targeted_label, attack_success_indicator, best_attack_step = robust_attack.attack(net, dense_data, cfg, i, len(test_loader))
             eval_num = 16
         elif cfg.attack == 'Liu':
-            adv_pc, targeted_label, attack_success_indicator, best_attack_step = Liu_attack.attack(net, dense_data, cfg, i, len(test_loader))
+            adv_pc, targeted_label, attack_success_indicator, best_attack_step = Liu_attack.attack(net, data, cfg, i, len(test_loader))
             eval_num = 1
 
         if cfg.attack == 'GeoA3' or cfg.attack == 'RA' or cfg.attack == 'Xiang' or cfg.attack == 'Liu':
