@@ -9,8 +9,8 @@ import time
 import numpy as np
 import scipy.io as sio
 from pytorch3d.io import load_obj, save_obj
-from pytorch3d.structures import Meshes, join_meshes_as_batch
 from pytorch3d.ops import sample_points_from_meshes
+from pytorch3d.structures import Meshes, join_meshes_as_batch
 import torch
 import torch.nn as nn
 import torch.optim as optim

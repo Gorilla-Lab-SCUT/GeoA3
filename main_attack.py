@@ -9,6 +9,7 @@ import time
 import numpy as np
 import scipy.io as sio
 from pytorch3d.io import load_obj, save_obj
+from pytorch3d.ops import sample_points_from_meshes
 from pytorch3d.structures import Meshes
 import torch
 import torch.nn as nn
@@ -17,7 +18,7 @@ from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
 from Attacker import geoA3_attack, Xiang_attack, robust_attack, Liu_attack, geoA3_mesh_attack
-from Lib.utility import estimate_normal_via_ori_normal, _compare, farthest_points_sample, Count_converge_iter
+from Lib.utility import estimate_normal_via_ori_normal, _compare, farthest_points_sample, Count_converge_iter, Average_meter, accuracy
 
 ten_label_indexes = [0, 2, 4, 5, 8, 22, 30, 33, 35, 37]
 ten_label_names = ['airplane', 'bed', 'bookshelf', 'bottle', 'chair', 'monitor', 'sofa', 'table', 'toilet', 'vase']
@@ -133,37 +134,6 @@ if not os.path.exists(trg_dir):
 trg_dir = os.path.join(saved_dir, 'Records')
 if not os.path.exists(trg_dir):
     os.makedirs(trg_dir)
-
-class Average_meter(object):
-    """Computes and stores the average and current value"""
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
-
-def accuracy(output, target, topk=(1,)):
-    maxk = max(topk)
-    batch_size = target.size(0)
-
-    _, pred = output.topk(maxk, 1, True, True)
-    pred = pred.t()
-    correct = pred.eq(target.view(1, -1).expand_as(pred))
-
-    res = []
-    for k in topk:
-        correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
-        res.append(correct_k.mul_(100.0 / batch_size))
-    return res
 
 def main():
     if cfg.id == 0:
