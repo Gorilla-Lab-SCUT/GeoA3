@@ -76,7 +76,8 @@ python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNetP
 ## Liu's attack
 python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNetPP.mat --npoint 1024 \
     --arch PointNetPP --attack Liu --attack_label All \
-    --iter_max_steps 500 --step_alpha 5
+    --iter_max_steps 500 --step_alpha 5 \
+    --id 3
 
 ## Defense
 python defense.py --datadir Exps/PointNetPP_npoint1024/All/Pertub_0_BiStep10_IterStep500_Optadam_Lr0.01_Initcons10_CE_CDLoss1.0_HDLoss0.1_CurLoss1.0_k16/Mat \
@@ -112,25 +113,28 @@ python main_attack.py --data_dir_file Data/modelnet10_250instances1024_DGCNN.mat
 ## Liu's attack
 python main_attack.py --data_dir_file Data/modelnet10_250instances1024_DGCNN.mat --npoint 1024 \
     --arch DGCNN --attack Liu --attack_label All \
-    --iter_max_steps 500 --step_alpha 5
+    --iter_max_steps 500 --step_alpha 5 \
+    --id 3
 
 
 
 
 # For evaluating the \beta
-python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNet.mat --npoint 1024 --arch PointNet --attack GeoA3 --attack_label All --binary_max_steps 1 --iter_max_steps 2500 --initial_const 10 --lr 0.01 --cls_loss_type CE --dis_loss_type CD --dis_loss_weight 1.0 --hd_loss_weight 0.1 --curv_loss_weight 1.0 --curv_loss_knn 16 --id 1
-
-python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNet.mat --npoint 1024 --arch PointNet --attack GeoA3 --attack_label All --binary_max_steps 1 --iter_max_steps 2500 --initial_const 100 --lr 0.01 --cls_loss_type CE --dis_loss_type CD --dis_loss_weight 1.0 --hd_loss_weight 0.1 --curv_loss_weight 1.0 --curv_loss_knn 16 --id 1
+python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNet.mat --npoint 1024 --arch PointNet --attack GeoA3 --attack_label All --binary_max_steps 1 --iter_max_steps 2500 --initial_const x --lr 0.01 --cls_loss_type CE --dis_loss_type CD --dis_loss_weight 1.0 --hd_loss_weight 0.1 --curv_loss_weight 1.0 --curv_loss_knn 16 --id 1
 
 
 # Mesh attack
 python main_attack.py --data_dir_file Data/modelnet10_250instances_mesh_PointNet.mat --npoint 1024 -b 1 \
     --arch PointNet --attack GeoA3_mesh --attack_label Untarget \
-    --binary_max_steps 10 --iter_max_steps 500 --lr 1e-4 \
+    --binary_max_steps 10 --iter_max_steps 500 --lr 1e-4 --is_use_lr_scheduler\
     --cls_loss_type CE \
     --dis_loss_type CD --dis_loss_weight 0.0 \
     --hd_loss_weight 0.1 \
     --curv_loss_weight 1.0 --curv_loss_knn 16 \
     --laplacian_loss_weight 5.0 \
+    --is_partial_var --knn_range 3 \
     --id 4
 
+
+
+python main_attack.py --data_dir_file Data/modelnet10_250instances_mesh_PointNet.mat --npoint 1024 -b 1     --arch PointNet --attack GeoA3_mesh --attack_label Untarget     --binary_max_steps 1 --iter_max_steps 2000 --lr 1e-3     --cls_loss_type CE     --dis_loss_type CD --dis_loss_weight 1.0     --hd_loss_weight 0.1     --curv_loss_weight 0.0 --curv_loss_knn 16 --laplacian_loss_weight 1.0 --id 4 --is_debug

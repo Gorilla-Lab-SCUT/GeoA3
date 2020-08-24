@@ -18,7 +18,7 @@ from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
 from Attacker import geoA3_attack, Xiang_attack, robust_attack, Liu_attack, geoA3_mesh_attack
-from Lib.utility import estimate_normal_via_ori_normal, _compare, farthest_points_sample, Count_converge_iter, Average_meter, accuracy
+from Lib.utility import estimate_normal_via_ori_normal, _compare, farthest_points_sample, Count_converge_iter, Count_loss_iter, Average_meter, accuracy
 
 ten_label_indexes = [0, 2, 4, 5, 8, 22, 30, 33, 35, 37]
 ten_label_names = ['airplane', 'bed', 'bookshelf', 'bottle', 'chair', 'monitor', 'sofa', 'table', 'toilet', 'vase']
@@ -64,8 +64,8 @@ parser.add_argument('--knn_threshold_coef', type=float, default=1.10, help='')
 parser.add_argument('--laplacian_loss_weight', type=float, default=0, help='')
 ## Mesh opt
 parser.add_argument('--is_partial_var', dest='is_partial_var', action='store_true', default=False, help='')
+parser.add_argument('--knn_range', type=int, default=3, help='')
 parser.add_argument('--is_use_lr_scheduler', dest='is_use_lr_scheduler', action='store_true', default=False, help='')
-
 ## perturbation clip setting
 parser.add_argument('--cc_linf', type=float, default=0.1, help='Coefficient for infinity norm')
 ## Jitter
@@ -79,6 +79,7 @@ parser.add_argument('--jitter_clip', type=float, default=0.05, help='')
 parser.add_argument('--step_alpha', type=float, default=5, help='')
 #------------Recording settings-------
 parser.add_argument('--is_record_converged_steps', action='store_true', default=False, help='')
+parser.add_argument('--is_record_loss', action='store_true', default=False, help='')
 #------------OS-----------------------
 parser.add_argument('-j', '--num_workers', default=8, type=int, metavar='N', help='number of data loading workers (default: 8)')
 parser.add_argument('--is_save_normal', action='store_true', default=False, help='')
@@ -92,6 +93,7 @@ if cfg.attack_label == 'Untarget':
 else:
     targeted = True
 
+print('=>Creating dir')
 saved_root = os.path.join('Exps', cfg.arch + '_npoint' + str(cfg.npoint))
 
 if cfg.attack == 'GeoA3' or cfg.attack == 'Xiang' or cfg.attack == 'RA' or cfg.attack == 'GeoA3_mesh':
@@ -108,7 +110,7 @@ if cfg.attack == 'GeoA3' or cfg.attack == 'Xiang' or cfg.attack == 'RA' or cfg.a
             saved_dir = saved_dir + '_LapLoss' + str(cfg.laplacian_loss_weight)
 
         if cfg.is_partial_var:
-            saved_dir = saved_dir + '_PartOpt'
+            saved_dir = saved_dir + '_PartOpt' + '_k' + str(cfg.knn_range)
 
         if cfg.is_use_lr_scheduler:
             saved_dir = saved_dir + '_LRExp'
@@ -134,8 +136,7 @@ else:
     saved_dir = 'Evaluating_' + str(cfg.id)
 
 saved_dir = os.path.join(saved_root, cfg.attack_label, saved_dir)
-
-print(saved_dir)
+print('==>Successfully created {}'.format(saved_dir))
 
 if cfg.attack == 'GeoA3_mesh':
     trg_dir = os.path.join(saved_dir, 'Mesh')
@@ -185,6 +186,7 @@ def main():
         dense_iter = None
 
     # model
+    print('=>Loading model')
     model_path = os.path.join('Pretrained', cfg.arch, str(cfg.npoint), 'model_best.pth.tar')
     if cfg.arch == 'PointNet':
         from Model.PointNet import PointNet
@@ -203,11 +205,13 @@ def main():
     checkpoint = torch.load(model_path)
     net.load_state_dict(checkpoint['state_dict'])
     net.eval()
-    print('\nSuccessfully load pretrained-model from {}\n'.format(model_path))
+    print('==>Successfully load pretrained-model from {}'.format(model_path))
 
     # recording settings
     if cfg.is_record_converged_steps:
         cci = Count_converge_iter(os.path.join(saved_dir, 'Records'))
+    if cfg.is_record_loss:
+        cli = Count_loss_iter(os.path.join(saved_dir, 'Records'))
 
     test_acc = Average_meter()
     batch_vertice = []
@@ -228,8 +232,10 @@ def main():
     for i, data in enumerate(test_loader):
         #print('[{0}/{1}]:'.format(i, test_loader.__len__()), end='')
         if cfg.attack == 'GeoA3_mesh':
-            _, _, gt_label = data[0], data[1], data[2]
+            vertex, _, gt_label = data[0], data[1], data[2]
             gt_target = gt_label.view(-1).cuda()
+            bs, l, _, _ = vertex.size()
+            b = bs*l
         else:
             pc = data[0]
             normal = data[1]
@@ -270,7 +276,7 @@ def main():
             print("Prec@1 {top1.avg:.3f}".format(top1=test_acc))
 
         elif cfg.attack == 'GeoA3':
-            adv_pc, targeted_label, attack_success_indicator, best_attack_step = geoA3_attack.attack(net, data, cfg, i, len(test_loader))
+            adv_pc, targeted_label, attack_success_indicator, best_attack_step, loss = geoA3_attack.attack(net, data, cfg, i, len(test_loader))
             eval_num = 1
         elif cfg.attack == 'Xiang':
             adv_pc, targeted_label, attack_success_indicator, best_attack_step = Xiang_attack.attack(net, data, cfg, i, len(test_loader))
@@ -290,6 +296,9 @@ def main():
         if cfg.attack == 'GeoA3' or cfg.attack == 'RA' or cfg.attack == 'Xiang' or cfg.attack == 'Liu':
             if cfg.is_record_converged_steps:
                 cci.record_converge_iter(best_attack_step)
+            if cfg.is_record_loss:
+                cli.record_loss_iter(loss)
+
             if cfg.is_save_normal:
                 with torch.no_grad():
                     # the loop here is for memory save
@@ -333,15 +342,16 @@ def main():
             cnt_ins = cnt_ins + bs
             cnt_all = cnt_all + b
         elif cfg.attack == 'GeoA3_mesh':
-            if attack_success_indicator[k].item() and best_score[k] != -1:
-                num_attack_success += 1
-                name = 'adv_' + str(cnt_ins+k//num_attack_classes) + '_gt' + str(gt_target[k].item()) + '_attack' + str(best_score[k])
-                final_verts, final_faces = adv_mesh[k].get_mesh_verts_faces(0)
-                #save .mat
-                sio.savemat(os.path.join(saved_dir, 'Mat', name+'.mat'), {"vert": final_verts, "faces":final_faces})
-                #save .obj mesh
-                file_name = os.path.join(saved_dir, 'Mesh', name+'.obj')
-                save_obj(file_name, final_verts, final_faces)
+            for k in range(b):
+                if attack_success_indicator[k].item() and best_score[k] != -1:
+                    num_attack_success += 1
+                    name = 'adv_' + str(cnt_ins+k//num_attack_classes) + '_gt' + str(gt_target[k].item()) + '_attack' + str(best_score[k])
+                    final_verts, final_faces = adv_mesh[k].get_mesh_verts_faces(0)
+                    #save .mat
+                    sio.savemat(os.path.join(saved_dir, 'Mat', name+'.mat'), {"vert": final_verts, "faces":final_faces})
+                    #save .obj mesh
+                    file_name = os.path.join(saved_dir, 'Mesh', name+'.obj')
+                    save_obj(file_name, final_verts, final_faces)
 
             cnt_ins = cnt_ins + bs
             cnt_all = cnt_all + b
@@ -349,6 +359,10 @@ def main():
     if cfg.is_record_converged_steps:
         cci.save_converge_iter()
         cci.plot_converge_iter_hist()
+    if cfg.is_record_loss:
+        cli.save_loss_iter()
+        cli.plot_loss_iter_hist()
+
 
     if cfg.attack == 'GeoA3' or cfg.attack == 'RA' or cfg.attack == 'Xiang' or cfg.attack == 'Liu':
         print('attack success: {0:.2f}\n'.format(num_attack_success/float(cnt_all)*100))

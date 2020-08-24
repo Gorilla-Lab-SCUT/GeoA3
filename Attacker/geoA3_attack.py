@@ -100,7 +100,7 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, 
     loss_n = cls_loss + scale_const * constrain_loss
     loss = loss_n.mean()
 
-    return output_curr_iter, loss, dis_loss, hd_loss, curv_loss, constrain_loss, info
+    return output_curr_iter, loss, loss_n, cls_loss, dis_loss, hd_loss, curv_loss, constrain_loss, info
 
 def attack(net, input_data, cfg, i, loader_len):
     #needed cfg:[arch, classes, attack_label, initial_const, lr, optim, binary_max_steps, iter_max_steps, metric,
@@ -149,7 +149,8 @@ def attack(net, input_data, cfg, i, loader_len):
     best_attack = torch.ones(b, 3, n).cuda()
     best_attack_step = [-1] * b
     best_attack_BS_idx = [-1] * b
-
+    all_loss_list = [[-1] * b] * cfg.iter_max_steps
+    #dis_loss_hist = [[-1] * b] * cfg.iter_max_steps
     for search_step in range(cfg.binary_max_steps):
         iter_best_loss = [1e10] * b
         iter_best_score = [-1] * b
@@ -195,7 +196,10 @@ def attack(net, input_data, cfg, i, loader_len):
                     project_jitter_noise = project_jitter_noise.clone()
                 input_curr_iter.data  = input_curr_iter.data  + project_jitter_noise
 
-            _, loss, dis_loss, hd_loss, nor_loss, constrain_loss, info = _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, target, scale_const, cfg, targeted)
+            _, loss, loss_n, cls_loss, dis_loss, hd_loss, nor_loss, constrain_loss, info = _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, target, scale_const, cfg, targeted)
+
+            all_loss_list[step] = loss_n.detach().tolist()
+            #dis_loss_hist[step] = cls_loss.detach().tolist()
 
             optimizer.zero_grad()
             if cfg.is_pre_jitter_input:
@@ -223,7 +227,7 @@ def attack(net, input_data, cfg, i, loader_len):
                 if upper_bound[k] < 1e9:
                     scale_const[k] = (lower_bound[k] + upper_bound[k]) * 0.5
 
-    return best_attack, target, (np.array(best_loss)<1e10), best_attack_step  #best_attack:[b, 3, n], target: [b], best_loss:[b], best_attack_step:[b]
+    return best_attack, target, (np.array(best_loss)<1e10), best_attack_step, all_loss_list  #best_attack:[b, 3, n], target: [b], best_loss:[b], best_attack_step:[b], all_loss_list:[iter_max_steps, b]
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GEOA3 Point Cloud Attacking')

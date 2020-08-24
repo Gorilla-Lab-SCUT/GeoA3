@@ -69,10 +69,13 @@ class ModelNet10_250instance_mesh():
 
             #vertice: [N1(aggregate points number), 3(xzy)]
             vertice = torch.FloatTensor(self.vertices[index]).contiguous()
+            vertices = vertice.unsqueeze(0).expand(9, -1, 3)
+
             #face: [N2(faces number), 3(abc)]
             face = torch.FloatTensor(self.faces[index]).contiguous().long()
+            faces = face.unsqueeze(0).expand(9, -1, 3)
 
-            return [vertice[:,:,[1,2,0]].cuda(), face, gt_labels, target_labels]
+            return [vertices[:,:,[1,2,0]], faces, gt_labels, target_labels]
 
         elif self.attack_label == 'Untarget':
             label = self.label[index]
@@ -80,10 +83,12 @@ class ModelNet10_250instance_mesh():
             gt_labels = torch.LongTensor([label]).clone()
             #vertices: [N1(aggregate points number), 3(xzy)]
             vertice = torch.FloatTensor(self.vertices[index]).contiguous()
+            vertices = vertice.unsqueeze(0).expand(1, -1, 3)
             #faces: [N2(faces number), 3(abc)]
             face = torch.FloatTensor(self.faces[index]).contiguous().long()
+            faces = face.unsqueeze(0).expand(1, -1, 3)
 
-            return [vertice[:,[1,2,0]], face, gt_labels]
+            return [vertices[:,:,[1,2,0]], faces, gt_labels]
 
         else:
             assert False, 'Attack label not included.'

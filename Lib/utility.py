@@ -414,3 +414,40 @@ class Count_converge_iter(object):
         ax.set_ylabel('Number of Samples', fontsize=fontsize)
         plt.savefig(fpath)
 
+
+class Count_loss_iter(object):
+    def __init__(self, fsave):
+        self.fsave = fsave
+        if not os.path.exists(self.fsave):
+            os.makedirs(self.fsave)
+
+    def record_loss_iter(self, loss_list):
+        # loss_list:[steps, b]
+        try:
+            self.loss_numpy = np.concatenate((self.loss_numpy, np.array(loss_list)), axis=1)
+        except:
+            self.loss_numpy = np.array(loss_list)
+
+    def save_loss_iter(self):
+        fpath = os.path.join(self.fsave, 'loss_iter.mat')
+        sio.savemat(fpath, {"loss": self.loss_numpy})
+
+    def plot_loss_iter_hist(self):
+        fpath = os.path.join(self.fsave, 'loss_iter.png')
+        num_iter, num_sample = self.loss_numpy.shape
+
+        start_iter = 1
+        x = np.arange(start_iter, num_iter+start_iter)
+        x.astype(int)
+        loss_mean = self.loss_numpy.mean(1)
+        loss_std = self.loss_numpy.std(1)
+
+        f, ax = plt.subplots(1,1)
+        ax.plot(x, loss_mean, color=color_list[0])
+        r1 = list(map(lambda x: x[0]-x[1], zip(loss_mean, loss_std)))
+        r2 = list(map(lambda x: x[0]+x[1], zip(loss_mean, loss_std)))
+        ax.fill_between(x, r1, r2, color=color_list[0], alpha=0.2)
+        ax.set_xlabel('Number of iteration', fontsize=fontsize)
+        ax.set_ylabel('Magnitude of loss', fontsize=fontsize)
+        plt.savefig(fpath)
+
