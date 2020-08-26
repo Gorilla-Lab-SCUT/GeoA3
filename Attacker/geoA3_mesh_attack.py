@@ -79,7 +79,7 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, 
         assert False, 'Not support such distance loss'
 
     # hd_loss
-    if cfg.hd_loss_weight !=0:
+    if cfg.hd_loss_weight != 0:
         hd_loss = intra_dis.min(2)[0].max(1)[0]
         constrain_loss = constrain_loss + cfg.hd_loss_weight * hd_loss
         info = info+'hd_loss : {0:6.3f}\t'.format(hd_loss.mean().item())
@@ -87,7 +87,7 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, 
         hd_loss = 0
 
     # nor loss
-    if cfg.curv_loss_weight !=0:
+    if cfg.curv_loss_weight != 0:
         curv_loss,_ = normal_loss(input_curr_iter, pc_ori, normal_curr_iter, None, cfg.curv_loss_knn)
 
         intra_dis = ((input_curr_iter.unsqueeze(3) - pc_ori.unsqueeze(2))**2).sum(1)
@@ -100,10 +100,15 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, 
     else:
         curv_loss = 0
 
-    if cfg.laplacian_loss_weight !=0:
+    if cfg.laplacian_loss_weight != 0:
         laplacian_loss = mesh_laplacian_smoothing(new_src_mesh, method="uniform")
         constrain_loss = constrain_loss + cfg.laplacian_loss_weight * laplacian_loss
         info = info+'Laplacian_loss : {0:6.3f} '.format(cfg.laplacian_loss_weight * (laplacian_loss).mean().item())
+
+    if cfg.edge_loss_weight != 0:
+        edge_loss = mesh_edge_loss(new_src_mesh)
+        constrain_loss = constrain_loss + cfg.edge_loss_weight * edge_loss
+        info = info+'MeshEG_loss : {0:6.3f} | '.format(cfg.edge_loss_weight * (edge_loss).mean().item())
 
     scale_const = scale_const.float().cuda()
     loss_n = cls_loss + scale_const * constrain_loss
