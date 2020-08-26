@@ -62,12 +62,15 @@ parser.add_argument('--knn_smoothing_k', type=int, default=5, help='')
 parser.add_argument('--knn_threshold_coef', type=float, default=1.10, help='')
 ## Laplacian loss for mesh
 parser.add_argument('--laplacian_loss_weight', type=float, default=0, help='')
+parser.add_argument('--edge_loss_weight', type=float, default=0, help='')
 ## Mesh opt
 parser.add_argument('--is_partial_var', dest='is_partial_var', action='store_true', default=False, help='')
 parser.add_argument('--knn_range', type=int, default=3, help='')
 parser.add_argument('--is_use_lr_scheduler', dest='is_use_lr_scheduler', action='store_true', default=False, help='')
 ## perturbation clip setting
 parser.add_argument('--cc_linf', type=float, default=0.1, help='Coefficient for infinity norm')
+## Proj offset
+parser.add_argument('--is_pro_grad', action='store_true', default=False, help='')
 ## Jitter
 parser.add_argument('--is_pre_jitter_input', action='store_true', default=False, help='')
 parser.add_argument('--is_previous_jitter_input', action='store_true', default=False, help='')
@@ -109,11 +112,17 @@ if cfg.attack == 'GeoA3' or cfg.attack == 'Xiang' or cfg.attack == 'RA' or cfg.a
         if cfg.laplacian_loss_weight != 0:
             saved_dir = saved_dir + '_LapLoss' + str(cfg.laplacian_loss_weight)
 
+        if cfg.edge_loss_weight != 0:
+            saved_dir = saved_dir + '_EdgeLoss' + str(cfg.edge_loss_weight)
+
         if cfg.is_partial_var:
             saved_dir = saved_dir + '_PartOpt' + '_k' + str(cfg.knn_range)
 
         if cfg.is_use_lr_scheduler:
             saved_dir = saved_dir + '_LRExp'
+
+        if cfg.is_pro_grad:
+            saved_dir = saved_dir + '_ProGrad'
 
         if cfg.is_pre_jitter_input:
             saved_dir = saved_dir + '_PreJitter' + str(cfg.jitter_sigma) + '_' + str(cfg.jitter_clip)
