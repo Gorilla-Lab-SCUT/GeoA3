@@ -11,6 +11,7 @@ parser = argparse.ArgumentParser(description='Smoothness Computing')
 parser.add_argument('--datadir', default='Data/modelnet40_1024_processed', type=str, metavar='DIR', help='path to dataset')
 parser.add_argument('--k', type=int, default=16, help='')
 parser.add_argument('--k2', type=int, default=16, help='')
+parser.add_argument('--print_freq', default=50, type=int, help='')
 
 cfg  = parser.parse_args()
 print(cfg)
@@ -45,7 +46,8 @@ for i, filename in enumerate(filenames):
 	#FIXME: here use cross prodcut to simulate the l_2 norm
 	s = torch.abs((pts*normal.unsqueeze(1)).sum(2)).mean(1).max()
 	smoothness.append(s)
-	print('[{0}/{1}]: {2:.4f}({3:.4f})'.format(i+1, len(filenames), s.item(), torch.FloatTensor(smoothness).mean().item()))
+    if (i+1) % cfg.print_freq == 0:
+    	print('[{0}/{1}]: {2:.4f}({3:.4f})'.format(i+1, len(filenames), s.item(), torch.FloatTensor(smoothness).mean().item()))
 
 # print(smoothness)
 smoothness = torch.FloatTensor(smoothness)
