@@ -110,8 +110,9 @@ def estimate_normal_via_ori_normal(pc_adv, pc_ori, normal_ori, k):
 
     # If the points are not modified (distance = 0), use the normal directly from the original
     # one. Otherwise, use the mean of the normals of the k-nearest points.
-    condition = (inter_value<1e-6).unsqueeze(1).expand_as(normal_ori)
-    normals_estimated = torch.where(condition, normal_ori, normal_pts_avg)
+    normal_ori_select = torch.gather(normal_ori, 2, inter_idx[:,:,0].view(b,1,n).expand(b,3,n)).view(b,3,n)
+    condition = (inter_value<1e-6).unsqueeze(1).expand_as(normal_ori_select)
+    normals_estimated = torch.where(condition, normal_ori_select, normal_pts_avg)
 
     return normals_estimated
 

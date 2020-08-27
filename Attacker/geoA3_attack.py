@@ -7,12 +7,15 @@ import sys
 import time
 
 import numpy as np
+import open3d as o3d
 import scipy.io as sio
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
+
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR + '/../'
@@ -21,6 +24,37 @@ sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
 from utility import compute_theta_normal, estimate_perpendicular, _compare
 from loss_utils import norm_l2_loss, chamfer_loss, hausdorff_loss, normal_loss
+
+def resample_reconstruct_from_pc(cfg, output_file_name, pc, normal=None, reconstruct_type='PRS'):
+    assert pc.size() == 2
+    assert pc.size(2) == 3
+    assert normal.size() == pc.size()
+
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pc)
+    if normal:
+        pcd.normals = o3d.utility.Vector3dVector(normal)
+
+    if reconstruct_type == 'BPA':
+        distances = pcd.compute_nearest_neighbor_distance()
+        avg_dist = np.mean(distances)
+        radius = 3 * avg_dist
+
+        bpa_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(pcd,o3d.utility.DoubleVector([radius, radius * 2]))
+
+        output_mesh = bpa_mesh.simplify_quadric_decimation(100000)
+        output_mesh.remove_degenerate_triangles()
+        output_mesh.remove_duplicated_triangles()
+        output_mesh.remove_duplicated_vertices()
+        output_mesh.remove_non_manifold_edges()
+    elif reconstruct_type == 'PRS':
+        poisson_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=8, width=0, scale=1.1, linear_fit=False)[0]
+        bbox = pcd.get_axis_aligned_bounding_box()
+        output_mesh = poisson_mesh.crop(bbox)
+
+    o3d.io.write_triangle_mesh(os.path.join(cfg.output_path, output_file_name+"ply"), output_mesh)
+
+    return o3d.geometry.TriangleMesh.sample_points_uniformly(output_mesh, number_of_points=cfg.npoint)
 
 def offset_proj(offset, normal, project='dir'):
     # offset: shape [b, 3, n], perturbation offset of each point
