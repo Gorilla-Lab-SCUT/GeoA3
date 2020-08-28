@@ -15,8 +15,6 @@ import torch.optim as optim
 from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
-
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR + '/../'
 sys.path.append(BASE_DIR)

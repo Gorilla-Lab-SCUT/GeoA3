@@ -311,7 +311,7 @@ def main():
             if cfg.is_save_normal:
                 with torch.no_grad():
                     # the loop here is for memory save
-                    knn_normal = torch.zeros_like(dense_normal)
+                    knn_normal = torch.zeros_like(adv_pc)
                     for idx in range(b):
                         knn_normal[idx] = estimate_normal_via_ori_normal(adv_pc[idx].unsqueeze(0), dense_point[idx].unsqueeze(0), dense_normal[idx].unsqueeze(0), k=3)
                 saved_normal = knn_normal.cpu().numpy()

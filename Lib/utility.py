@@ -1,6 +1,7 @@
 import copy
 import math
 import os
+import re
 import shutil
 import sys
 import time
@@ -452,3 +453,8 @@ class Count_loss_iter(object):
         ax.set_ylabel('Magnitude of loss', fontsize=fontsize)
         plt.savefig(fpath)
 
+
+def natural_sort(l):
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+    return sorted(l, key=alphanum_key)

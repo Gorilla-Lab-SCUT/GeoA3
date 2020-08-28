@@ -12,7 +12,7 @@
     "python.linting.enabled": true,
     "python.linting.pylintArgs": [
       "--errors-only",
-      "--generated-members=numpy.*, np.*, cv2.* , cv.*, torch.*, o3d.*, open3d.*, ",
+      "--generated-members=numpy.*, np.*, cv2.* , cv.*, torch.*, o3d.*, open3d.*, meshio.*, trimesh.* ",
       "--init-hook", "import sys; sys.path.append('Model'); sys.path.append('Lib'); sys.path.append('Provider'); sys.path.append('Attacker')"
     ],
 
