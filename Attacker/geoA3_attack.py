@@ -21,7 +21,7 @@ sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
 from utility import compute_theta_normal, estimate_perpendicular, _compare
-from loss_utils import norm_l2_loss, chamfer_loss, hausdorff_loss, normal_loss
+from loss_utils import norm_l2_loss, chamfer_loss, hausdorff_loss, normal_loss, uniform_loss
 
 def resample_reconstruct_from_pc(cfg, output_file_name, pc, normal=None, reconstruct_type='PRS'):
     assert pc.size() == 2
@@ -164,6 +164,14 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, 
         info = info+'curv_loss : {0:6.4f}\t'.format(curv_loss.mean().item())
     else:
         curv_loss = 0
+
+    # uniform loss
+    if cfg.uniform_loss_weight !=0:
+        uniform = uniform_loss(input_curr_iter)
+        constrain_loss = constrain_loss + cfg.uniform_loss_weight * uniform
+        info = info+'uniform : {0:6.4f}\t'.format(uniform.mean().item())
+    else:
+        uniform = 0
 
     scale_const = scale_const.float().cuda()
     loss_n = cls_loss + scale_const * constrain_loss

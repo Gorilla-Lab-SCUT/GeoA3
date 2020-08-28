@@ -56,6 +56,8 @@ parser.add_argument('--hd_loss_weight', type=float, default=0.1, help='')
 ## normal loss
 parser.add_argument('--curv_loss_weight', type=float, default=1.0, help='')
 parser.add_argument('--curv_loss_knn', type=int, default=16, help='')
+## uniform loss
+parser.add_argument('--uniform_loss_weight', type=float, default=1.0, help='')
 ## KNN smoothing loss
 parser.add_argument('--knn_smoothing_loss_weight', type=float, default=5.0, help='')
 parser.add_argument('--knn_smoothing_k', type=int, default=5, help='')
@@ -108,6 +110,9 @@ if cfg.attack == 'GeoA3' or cfg.attack == 'Xiang' or cfg.attack == 'RA' or cfg.a
 
         if cfg.curv_loss_weight != 0:
             saved_dir = saved_dir + '_CurLoss' + str(cfg.curv_loss_weight) + '_k' + str(cfg.curv_loss_knn)
+
+        if cfg.uniform_loss_weight != 0:
+            saved_dir = saved_dir + '_UniLoss' + str(cfg.uniform_loss_weight)
 
         if cfg.laplacian_loss_weight != 0:
             saved_dir = saved_dir + '_LapLoss' + str(cfg.laplacian_loss_weight)
