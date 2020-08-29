@@ -182,7 +182,9 @@ def main():
         if (str(cfg.npoint) in cfg.data_dir_file):
             resample_num = -1
         else:
-            resample_num = cfg.npoint
+            # FIXME
+            #resample_num = cfg.npoint
+            resample_num = -1
 
         from Provider.modelnet10_instance250 import ModelNet40
         test_dataset = ModelNet40(data_mat_file=cfg.data_dir_file, attack_label=cfg.attack_label, resample_num=resample_num)

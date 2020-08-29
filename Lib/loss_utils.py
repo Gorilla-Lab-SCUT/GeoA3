@@ -119,6 +119,7 @@ def uniform_loss(adv_pc, percentages=[0.004,0.006,0.008,0.010,0.012], radius=1.0
     b,n,_=adv_pc.size()
     npoint = int(n * 0.05)
     for p in percentages:
+        p = p*4
         nsample = int(n*p)
         r = math.sqrt(p*radius)
         disk_area = math.pi *(radius ** 2) * p/nsample
