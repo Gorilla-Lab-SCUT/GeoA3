@@ -246,7 +246,6 @@ def main():
         num_attack_classes = 9
 
     for i, data in enumerate(test_loader):
-        #print('[{0}/{1}]:'.format(i, test_loader.__len__()), end='')
         if cfg.attack == 'GeoA3_mesh':
             vertex, _, gt_label = data[0], data[1], data[2]
             gt_target = gt_label.view(-1).cuda()

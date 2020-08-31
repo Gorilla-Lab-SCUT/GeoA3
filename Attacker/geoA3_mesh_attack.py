@@ -123,7 +123,7 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir):
     #  is_save_normal,
     #  ]
     assert cfg.batch_size == 1
-    eval_num = 50
+    eval_num = 100
     step_print_freq = 50
 
     if cfg.attack_label == 'Untarget':
@@ -139,7 +139,7 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir):
     #b = cfg.batch_size * num_attack_classes
     vertice = vertice.view(b, vn, 3).cuda()
     faces_idx = faces_idx.view(b, fn, 3).cuda()
-    gt_target = gt_label.cuda()
+    gt_target = gt_label.view(-1).cuda()
 
     if cfg.attack_label == 'Untarget':
         num_attack_classes = 1
@@ -289,7 +289,7 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir):
                     batch_k_attack_pc = sample_points_from_meshes(batch_k_meshes, 1024).permute(0, 2, 1)
                     batch_k_adv_output = net(batch_k_attack_pc)
 
-                    attack_success[k] = _compare(torch.max(batch_k_adv_output,1)[1].data, target[k], gt_target[k], targeted).sum() > 0.2 * eval_num
+                    attack_success[k] = _compare(torch.max(batch_k_adv_output,1)[1].data, target[k], gt_target[k], targeted).sum() > 0.5 * eval_num
 
                     # shape metric
                     batch_k_src_meshes = join_meshes_as_batch([ori_mesh[k]]*eval_num)

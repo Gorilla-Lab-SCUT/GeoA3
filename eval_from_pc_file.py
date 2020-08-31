@@ -119,6 +119,8 @@ def main():
         trg_file_names = natural_sort(trg_file_names)
 
         for i, trg_name in enumerate(trg_file_names):
+            if "_" in trg_name:
+                continue
             idx = trg_name.split("_")[1]
             gt_label = int(re.findall(r"\d+\.?\d*",trg_name.split("_")[2])[0])
             adv_label = int(re.findall(r"\d+\.?\d*",trg_name.split("_")[3].split(".")[0])[0])
@@ -146,7 +148,7 @@ def main():
             if pred_label==adv_label:
                 cnt_attack_success+=1
 
-            print('[{0}/{1}] of \'{2}\', pred label {3}, attack still success {:3.2f}%'.format(i, len(trg_file_names), trg_name, pred_label.item(), cnt_attack_success/float(i+1)*100))
+            print('[{0}/{1}] of \'{2}\', pred label {3}, attack still success {4:3.2f}%'.format(i, len(trg_file_names), trg_name, pred_label.item(), cnt_attack_success/float(i+1)*100))
 
             if cfg.is_debug:
                 fout = open(os.path.join(trg_save_path, "curr_"+str((pred_label==adv_label).item())+"_"+trg_name.split(".")[0]+".xyz"), 'w')
@@ -158,13 +160,15 @@ def main():
         cnt_attack_success = 0
 
         for i, mesh_name in enumerate(file_names):
+            if "_" not in mesh_name:
+                continue
             idx = mesh_name.split("_")[1]
             gt_label = int(re.findall(r"\d+\.?\d*",mesh_name.split("_")[2])[0])
             adv_label = int(re.findall(r"\d+\.?\d*",mesh_name.split("_")[3].split(".")[0])[0])
 
             if ".obj" in mesh_name:
                 mesh = load_objs_as_meshes([os.path.join(cfg.datadir, mesh_name)])
-                curr_pc = sample_points_from_meshes(mesh, 1024).permute(0,2,1)
+                curr_pc = sample_points_from_meshes(mesh, cfg.npoint).permute(0,2,1)
 
                 pc_var = Variable(curr_pc.cuda(), requires_grad=False)
                 output_var = net(pc_var)
@@ -174,7 +178,7 @@ def main():
                 if pred_label==adv_label:
                     cnt_attack_success+=1
 
-                print('[{0}/{1}] of \'{2}\', pred label {3}, attack still success {:3.2f}%'.format(i, len(file_names), mesh_name, pred_label.item(), cnt_attack_success/float(i+1)*100))
+                print('[{0}/{1}] of \'{2}\', pred label {3}, attack still success {4:3.2f}%'.format(i, len(file_names), mesh_name, pred_label.item(), cnt_attack_success/float(i+1)*100))
             else:
                 pass
     else:

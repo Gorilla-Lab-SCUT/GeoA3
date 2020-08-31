@@ -203,6 +203,256 @@ def pad_larger_tensor_with_index(small_verts, small_in_larger_idx_list, larger_t
     full_deform_verts[small_in_larger_idx_list] = small_verts
     return full_deform_verts
 
+def read_lines_from_xyz(path, num_points):
+    with open(path) as file:
+        vertices = []
+        if num_points == -1:
+            num_points = len(open(path,'r').readlines())
+        for i in range(num_points):
+            line = file.readline()
+            vertices.append([float(x) for x in line.split()[0:3]])
+
+    return vertices
+
+def write_obj(file, vertices, faces):
+    """
+    Writes the given vertices and faces to OBJ.
+
+    :param vertices: vertices as tuples of (x, y, z) coordinates
+    :type vertices: [(float)]
+    :param faces: faces as tuples of (num_vertices, vertex_id_1, vertex_id_2, ...)
+    :type faces: [(int)]
+    """
+
+    num_vertices = len(vertices)
+    num_faces = len(faces)
+
+    assert num_vertices > 0
+    assert num_faces > 0
+
+    with open(file, 'w') as fp:
+        for vertex in vertices:
+            assert len(vertex) == 3, 'invalid vertex with %d dimensions found (%s)' % (len(vertex), file)
+            fp.write('v' + ' ' + str(vertex[0]) + ' ' + str(vertex[1]) + ' ' + str(vertex[2]) + '\n')
+
+        for face in faces:
+            assert len(face) == 3, 'only triangular faces supported (%s)' % file
+            fp.write('f ')
+
+            for i in range(len(face)):
+                assert face[i] >= 0 and face[i] < num_vertices, 'invalid vertex index %d (of %d vertices) (%s)' % (face[i], num_vertices, file)
+
+                # face indices are 1-based
+                fp.write(str(face[i] + 1))
+                if i < len(face) - 1:
+                    fp.write(' ')
+
+            fp.write('\n')
+
+        # add empty line to be sure
+        fp.write('\n')
+
+def read_obj(file):
+    """
+    Reads vertices and faces from an obj file.
+
+    :param file: path to file to read
+    :type file: str
+    :return: vertices and faces as lists of tuples
+    :rtype: [(float)], [(int)]
+    """
+
+    assert os.path.exists(file), 'file %s not found' % file
+
+    with open(file, 'r') as fp:
+        lines = fp.readlines()
+        lines = [line.strip() for line in lines if line.strip()]
+
+        vertices = []
+        faces = []
+        for line in lines:
+            parts = line.split(' ')
+            parts = [part.strip() for part in parts if part]
+
+            if parts[0] == 'v':
+                assert len(parts) == 4, \
+                    'vertex should be of the form v x y z, but found %d parts instead (%s)' % (len(parts), file)
+                assert parts[1] != '', 'vertex x coordinate is empty (%s)' % file
+                assert parts[2] != '', 'vertex y coordinate is empty (%s)' % file
+                assert parts[3] != '', 'vertex z coordinate is empty (%s)' % file
+
+                vertices.append([float(parts[1]), float(parts[2]), float(parts[3])])
+            elif parts[0] == 'f':
+                assert len(parts) == 4, \
+                    'face should be of the form f v1/vt1/vn1 v2/vt2/vn2 v2/vt2/vn2, but found %d parts (%s) instead (%s)' % (len(parts), line, file)
+
+                components = parts[1].split('/')
+                assert len(components) >= 1 and len(components) <= 3, \
+                   'face component should have the forms v, v/vt or v/vt/vn, but found %d components instead (%s)' % (len(components), file)
+                assert components[0].strip() != '', \
+                    'face component is empty (%s)' % file
+                v1 = int(components[0])
+
+                components = parts[2].split('/')
+                assert len(components) >= 1 and len(components) <= 3, \
+                    'face component should have the forms v, v/vt or v/vt/vn, but found %d components instead (%s)' % (len(components), file)
+                assert components[0].strip() != '', \
+                    'face component is empty (%s)' % file
+                v2 = int(components[0])
+
+                components = parts[3].split('/')
+                assert len(components) >= 1 and len(components) <= 3, \
+                    'face component should have the forms v, v/vt or v/vt/vn, but found %d components instead (%s)' % (len(components), file)
+                assert components[0].strip() != '', \
+                    'face component is empty (%s)' % file
+                v3 = int(components[0])
+
+                #assert v1 != v2 and v2 != v3 and v3 != v2, 'degenerate face detected: %d %d %d (%s)' % (v1, v2, v3, file)
+                if v1 == v2 or v2 == v3 or v1 == v3:
+                    print('[Info] skipping degenerate face in %s' % file)
+                else:
+                    faces.append([v1 - 1, v2 - 1, v3 - 1]) # indices are 1-based!
+            else:
+                #assert False, 'expected either vertex or face but got line: %s (%s)' % (line, file)
+                pass
+
+        return vertices, faces
+
+    assert False, 'could not open %s' % file
+
+def write_off(file, vertices, faces):
+    """
+    Writes the given vertices and faces to OFF.
+
+    :param vertices: vertices as tuples of (x, y, z) coordinates
+    :type vertices: [(float)]
+    :param faces: faces as tuples of (num_vertices, vertex_id_1, vertex_id_2, ...)
+    :type faces: [(int)]
+    """
+
+    num_vertices = len(vertices)
+    num_faces = len(faces)
+
+    assert num_vertices > 0
+    assert num_faces > 0
+
+    with open(file, 'w') as fp:
+        fp.write('OFF\n')
+        fp.write(str(num_vertices) + ' ' + str(num_faces) + ' 0\n')
+
+        for vertex in vertices:
+            assert len(vertex) == 3, 'invalid vertex with %d dimensions found (%s)' % (len(vertex), file)
+            fp.write(str(vertex[0]) + ' ' + str(vertex[1]) + ' ' + str(vertex[2]) + '\n')
+
+        for face in faces:
+            assert face[0] == 3, 'only triangular faces supported (%s)' % file
+            assert len(face) == 4, 'faces need to have 3 vertices, but found %d (%s)' % (len(face), file)
+
+            for i in range(len(face)):
+                assert face[i] >= 0 and face[i] < num_vertices, 'invalid vertex index %d (of %d vertices) (%s)' % (face[i], num_vertices, file)
+
+                fp.write(str(face[i]))
+                if i < len(face) - 1:
+                    fp.write(' ')
+
+            fp.write('\n')
+
+        # add empty line to be sure
+        fp.write('\n')
+
+def read_off(file):
+    """
+    Reads vertices and faces from an off file.
+
+    :param file: path to file to read
+    :type file: str
+    :return: vertices and faces as lists of tuples
+    :rtype: [(float)], [(int)]
+    """
+
+    assert os.path.exists(file), 'file %s not found' % file
+
+    with open(file, 'r') as fp:
+        lines = fp.readlines()
+        lines = [line.strip() for line in lines]
+
+        # Fix for ModelNet bug were 'OFF' and the number of vertices and faces are
+        # all in the first line.
+        if len(lines[0]) > 3 and lines[0][:4] != 'COFF':
+            assert lines[0][:3] == 'OFF' or lines[0][:3] == 'off', 'invalid OFF file %s' % file
+
+            parts = lines[0][3:].split(' ')
+            assert len(parts) == 3
+
+            num_vertices = int(parts[0])
+            assert num_vertices > 0
+
+            num_faces = int(parts[1])
+            assert num_faces > 0
+
+            start_index = 1
+        # This is the regular case!
+        else:
+            assert lines[0] == 'OFF' or lines[0] == 'off' or lines[0][:4] == 'COFF', 'invalid OFF file %s' % file
+
+            parts = lines[1].split(' ')
+            assert len(parts) == 3
+
+            num_vertices = int(parts[0])
+            assert num_vertices > 0
+
+            num_faces = int(parts[1])
+            assert num_faces > 0
+
+            start_index = 2
+
+        vertices = []
+        for i in range(num_vertices):
+            vertex = lines[start_index + i].split(' ')
+            vertex = [float(point.strip()) for point in vertex if point != '']
+            if len(vertex) == 3:
+                vertices.append(vertex)
+            else:
+                vertices.append(vertex[0:3])
+
+        faces = []
+        for i in range(num_faces):
+            face = lines[start_index + num_vertices + i].split(' ')
+            face = [index.strip() for index in face if index != '']
+
+            # check to be sure
+            for index in face:
+                assert index != '', 'found empty vertex index: %s (%s)' % (lines[start_index + num_vertices + i], file)
+
+            face = [int(index) for index in face]
+
+            assert face[0] == len(face) - 1, 'face should have %d vertices but as %d (%s)' % (face[0], len(face) - 1, file)
+            assert face[0] == 3, 'only triangular meshes supported (%s)' % file
+            for index in face:
+                assert index >= 0 and index < num_vertices, 'vertex %d (of %d vertices) does not exist (%s)' % (index, num_vertices, file)
+
+            assert len(face) > 1
+
+            faces.append(face)
+
+        return vertices, faces
+
+    assert False, 'could not open %s' % file
+
+def pc_normalize_torch(point):
+    #point:[n,3]
+    assert len(point.size()) == 2
+    assert point.size(1) == 3
+    # normalize the point and face
+    with torch.no_grad():
+        avg = torch.mean(point.t(), dim = 1)
+        scale = torch.max(torch.norm(point, dim = 1), dim = 0)[0]
+        #scale = torch.max(point.abs().max(0).values)
+
+    normed_point = point - avg[np.newaxis, :]
+    normed_point = normed_point / scale[np.newaxis, np.newaxis]
+    return normed_point
+
 _, term_width = os.popen('stty size', 'r').read().split()
 term_width = int(term_width)
 TOTAL_BAR_LENGTH = 30.

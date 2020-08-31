@@ -90,7 +90,7 @@ class ModelNet40():
 
             normal = self.normal[index].contiguous().t()
             normals = normal.unsqueeze(0).expand(1, -1, -1)
-            return [pcs, normals, gt_labels] 
+            return [pcs, normals, gt_labels]
 
     def __farthest_points_normalized(self, obj_points, num_points, normal):
         first = np.random.randint(len(obj_points))
@@ -102,7 +102,7 @@ class ModelNet40():
             selected.append(np.argmax(dists))
         res_points = np.array(obj_points[selected])
         res_normal = np.array(normal[selected])
-            
+
         # normalize the points and faces
         avg = np.average(res_points, axis = 0)
         res_points = res_points - avg[np.newaxis, :]
@@ -110,3 +110,61 @@ class ModelNet40():
         res_points = res_points / dists
 
         return res_points, res_normal
+
+
+if __name__ == '__main__':
+    from Lib.utility import Average_meter, accuracy
+    from Model.PointNet import PointNet
+
+    test_dataset_untarget = ModelNet40(data_mat_file='Data/modelnet10_250instances1024_PointNet.mat', attack_label='Untarget', resample_num=-1)
+    test_loader_untarget = torch.utils.data.DataLoader(test_dataset_untarget, batch_size=1, shuffle=False, drop_last=False, num_workers=4, pin_memory=True)
+
+    test_dataset_all = ModelNet40(data_mat_file='Data/modelnet10_250instances1024_PointNet.mat', attack_label='Untarget', resample_num=-1)
+    test_loader_all = torch.utils.data.DataLoader(test_dataset_all, batch_size=1, shuffle=False, drop_last=False, num_workers=4, pin_memory=True)
+
+    net = PointNet(40, npoint=1024).cuda()
+    model_path = os.path.join('Pretrained/PointNet/1024/model_best.pth.tar')
+    checkpoint = torch.load(model_path)
+    net.load_state_dict(checkpoint['state_dict'])
+    net.eval()
+    test_acc = Average_meter()
+
+    for i in range(10):
+        assert (test_dataset_untarget[i][0] == test_dataset_all[i][0]).all()
+
+    for i, data in enumerate(test_loader_untarget):
+        pc, normal, gt_label = data[0], data[1], data[2]
+        if pc.size(3) == 3:
+            pc = pc.permute(0,1,3,2)
+        if normal.size(3) == 3:
+            normal = normal.permute(0,1,3,2)
+        bs, l, _, n = pc.size()
+        b = bs*l
+        pc_ori = pc.view(b, 3, n).cuda()
+        normal_ori = normal.view(b, 3, n).cuda()
+        gt_target = gt_label.view(-1).cuda()
+
+        with torch.no_grad():
+            output = net(pc_ori)
+        acc = accuracy(output.data, gt_target.data, topk=(1, ))
+        test_acc.update(acc[0][0], output.size(0))
+        print("PrecUntarget@1 {top1.avg:.3f}".format(top1=test_acc))
+
+
+    for i, data in enumerate(test_loader_all):
+        pc, normal, gt_label = data[0], data[1], data[2]
+        if pc.size(3) == 3:
+            pc = pc.permute(0,1,3,2)
+        if normal.size(3) == 3:
+            normal = normal.permute(0,1,3,2)
+        bs, l, _, n = pc.size()
+        b = bs*l
+        pc_ori = pc.view(b, 3, n).cuda()
+        normal_ori = normal.view(b, 3, n).cuda()
+        gt_target = gt_label.view(-1).cuda()
+
+        with torch.no_grad():
+            output = net(pc_ori)
+        acc = accuracy(output.data, gt_target.data, topk=(1, ))
+        test_acc.update(acc[0][0], output.size(0))
+        print("PrecAll@1 {top1.avg:.3f}".format(top1=test_acc))

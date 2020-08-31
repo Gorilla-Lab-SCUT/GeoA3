@@ -58,7 +58,6 @@ class ModelNet10_250instance_mesh():
     def __getitem__(self, index):
         if (self.attack_label in ten_label_names) or (self.attack_label == 'All'):
             label = self.label[index]
-            gt_labels = torch.LongTensor([label]).clone()
 
             target_labels = []
             for i in mesh_ten_label_indexes:
@@ -66,6 +65,8 @@ class ModelNet10_250instance_mesh():
                     target_labels.append(i)
             target_labels = torch.LongTensor(target_labels)
             assert target_labels.size(0)==9
+
+            gt_labels = torch.LongTensor([label]).expand_as(target_labels)
 
             #vertice: [N1(aggregate points number), 3(xzy)]
             vertice = torch.FloatTensor(self.vertices[index]).contiguous()
@@ -80,7 +81,7 @@ class ModelNet10_250instance_mesh():
         elif self.attack_label == 'Untarget':
             label = self.label[index]
             label = pc_ten_label_indexes[mesh_ten_label_indexes.index(label)]
-            gt_labels = torch.LongTensor([label]).clone()
+            gt_labels = torch.LongTensor([label])
             #vertices: [N1(aggregate points number), 3(xzy)]
             vertice = torch.FloatTensor(self.vertices[index]).contiguous()
             vertices = vertice.unsqueeze(0).expand(1, -1, 3)
