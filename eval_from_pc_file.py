@@ -8,7 +8,7 @@ import time
 
 import numpy as np
 import scipy.io as sio
-from pytorch3d.io import load_objs_as_meshes
+from pytorch3d.io import load_objs_as_meshes, save_obj
 from pytorch3d.ops import sample_points_from_meshes
 import torch
 import torch.nn as nn
@@ -18,6 +18,7 @@ from Lib.utility import natural_sort
 parser = argparse.ArgumentParser(description='Evluate Single Obj File')
 parser.add_argument('--datadir', default='./Vis/Post_Mesh/', type=str, metavar='DIR', help='path to dataset')
 parser.add_argument('--trg_file_path', default=None, type=str, metavar='DIR', help='path to adv dataset')
+parser.add_argument('--save_dir', default=None, type=str, help='')
 parser.add_argument('--arch', default='PointNet', type=str, metavar='ARCH', help='')
 parser.add_argument('--npoint', default=1024, type=int, help='')
 parser.add_argument('-c', '--classes', default=40, type=int, metavar='N', help='num of classes (default: 40)')
@@ -158,6 +159,10 @@ def main():
 
     elif cfg.is_mesh:
         cnt_attack_success = 0
+        cnt_all = 0
+        save_dir = cfg.save_dir or os.path.join(cfg.datadir, "../Adv_sample_from_mesh")
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
 
         for i, mesh_name in enumerate(file_names):
             if "_" not in mesh_name:
@@ -167,6 +172,7 @@ def main():
             adv_label = int(re.findall(r"\d+\.?\d*",mesh_name.split("_")[3].split(".")[0])[0])
 
             if ".obj" in mesh_name:
+                cnt_all += 1
                 mesh = load_objs_as_meshes([os.path.join(cfg.datadir, mesh_name)])
                 curr_pc = sample_points_from_meshes(mesh, cfg.npoint).permute(0,2,1)
 
@@ -175,12 +181,22 @@ def main():
 
                 pred_label = torch.max(output_var.data.cpu(),1)[1]
 
-                if pred_label==adv_label:
+                if pred_label!=gt_label:
                     cnt_attack_success+=1
 
-                print('[{0}/{1}] of \'{2}\', pred label {3}, attack still success {4:3.2f}%'.format(i, len(file_names), mesh_name, pred_label.item(), cnt_attack_success/float(i+1)*100))
+                    fout = open(os.path.join(save_dir, mesh_name.split(".")[0]+'.xyz'), 'w')
+                    for m in range(curr_pc.shape[2]):
+                        fout.write('%f %f %f\n' % (curr_pc[0, 0, m], curr_pc[0, 1, m], curr_pc[0, 2, m]))
+                    fout.close()
+
+                    file_name = open(os.path.join(save_dir, mesh_name.split(".")[0]+'_mesh.obj'), 'w')
+                    final_verts, final_faces = mesh.get_mesh_verts_faces(0)
+                    save_obj(file_name, final_verts, final_faces)
+
+                print('[{0}/{1}] of \'{2}\', pred label {3}, attack still success {4:3.2f}%'.format(i, len(file_names), mesh_name, pred_label.item(), cnt_attack_success/float(cnt_all)*100))
             else:
                 pass
+
     else:
         for i, pc_name in enumerate(file_names):
             if ".xyz" or ".obj" in pc_name:

@@ -195,9 +195,9 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
         target = input_data[3].view(-1).cuda()
 
     if cfg.curv_loss_weight !=0:
-        theta_normal = _get_kappa_ori(pc_ori, normal_ori, cfg.curv_loss_knn)
+        kappa_ori = _get_kappa_ori(pc_ori, normal_ori, cfg.curv_loss_knn)
     else:
-        theta_normal = None
+        kappa_ori = None
 
     lower_bound = torch.ones(b) * 0
     scale_const = torch.ones(b) * cfg.initial_const
@@ -262,7 +262,7 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
                     project_jitter_noise = project_jitter_noise.clone()
                 input_curr_iter.data  = input_curr_iter.data  + project_jitter_noise
 
-            _, normal_curr_iter, loss, loss_n, cls_loss, dis_loss, hd_loss, nor_loss, constrain_loss, info = _forward_step(net, pc_ori, input_curr_iter, normal_ori, theta_normal, target, scale_const, cfg, targeted)
+            _, normal_curr_iter, loss, loss_n, cls_loss, dis_loss, hd_loss, nor_loss, constrain_loss, info = _forward_step(net, pc_ori, input_curr_iter, normal_ori, kappa_ori, target, scale_const, cfg, targeted)
 
             all_loss_list[step] = loss_n.detach().tolist()
 
@@ -301,7 +301,7 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
             else:
                 info = '[{5}/{6}][{0}/{1}][{2}/{3}] \t loss: {4:6.4f}\t'.format(search_step+1, cfg.binary_max_steps, step+1, cfg.iter_max_steps, loss.item(), i, loader_len) + info
 
-            if (step+1) % step_print_freq == 0 or step == cfg.iter_max_steps - 1:
+            if step % step_print_freq == 0 or step == cfg.iter_max_steps - 1:
                 print(info)
 
         if cfg.is_debug:

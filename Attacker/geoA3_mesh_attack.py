@@ -10,7 +10,7 @@ import numpy as np
 import scipy.io as sio
 from pytorch3d.io import load_obj, save_obj
 from pytorch3d.loss import chamfer_distance, mesh_edge_loss, mesh_laplacian_smoothing, mesh_normal_consistency
-from pytorch3d.ops import sample_points_from_meshes
+from pytorch3d.ops import sample_points_from_meshes, estimate_pointcloud_normals
 from pytorch3d.structures import Meshes, join_meshes_as_batch
 import torch
 import torch.nn as nn
@@ -23,10 +23,10 @@ ROOT_DIR = BASE_DIR + '/../'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
-from utility import estimate_normal, estimate_perpendicular, _compare, pad_larger_tensor_with_index
+from utility import _compare, pad_larger_tensor_with_index
 from loss_utils import chamfer_loss, hausdorff_loss,  _get_kappa_ori, _get_kappa_adv, curvature_loss
 
-def _forward_step(net, pc_ori, input_curr_iter, normal_ori, ori_kappa, new_src_mesh, target, scale_const, cfg, targeted):
+def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, ori_kappa, new_src_mesh, target, scale_const, cfg, targeted):
     #needed cfg:[arch, classes, cls_loss_type, confidence, dis_loss_type, is_cd_single_side, dis_loss_weight, hd_loss_weight, curv_loss_weight, curv_loss_knn]
     b,_,n=input_curr_iter.size()
     output_curr_iter = net(input_curr_iter)
@@ -88,7 +88,8 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_ori, ori_kappa, new_src_m
 
     # nor loss
     if cfg.curv_loss_weight != 0:
-        adv_kappa, normal_curr_iter = _get_kappa_adv(input_curr_iter, pc_ori, normal_ori, cfg.curv_loss_knn)
+        #adv_kappa, normal_curr_iter = _get_kappa_adv(input_curr_iter, pc_ori, normal_curr_iter, cfg.curv_loss_knn)
+        adv_kappa = _get_kappa_ori(input_curr_iter, normal_curr_iter, cfg.curv_loss_knn)
         curv_loss = curvature_loss(input_curr_iter, pc_ori, adv_kappa, ori_kappa)
 
         constrain_loss = constrain_loss + cfg.curv_loss_weight * curv_loss
@@ -166,10 +167,10 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir):
 
         pc_ori = sample_points_from_meshes(ori_mesh, 1024).permute(0,2,1)
         if cfg.curv_loss_weight !=0:
-            normal_ori = estimate_normal(pc_ori, k=8)
-            theta_normal = _get_kappa_ori(pc_ori, normal_ori, cfg.curv_loss_knn)
+            normal_ori = estimate_pointcloud_normals(pc_ori.permute(0,2,1), neighborhood_size=8, disambiguate_directions=True).permute(0,2,1)
+            kappa_ori = _get_kappa_ori(pc_ori, normal_ori, cfg.curv_loss_knn)
         else:
-            theta_normal = None
+            kappa_ori = None
 
         if cfg.is_partial_var:
             with torch.no_grad():
@@ -178,18 +179,6 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir):
                 idx01 = torch.stack([e0, e1], dim=1)  # (sum(E_n), 2)
                 idx10 = torch.stack([e1, e0], dim=1)  # (sum(E_n), 2)
                 idx = torch.cat([idx01, idx10], dim=0).t()  # (2, 2*sum(E_n))
-
-        # deform_verts = torch.zeros(src_mesh.verts_packed().shape).cuda()
-        # nn.init.normal_(deform_verts, mean=0, std=1e-3)
-        # deform_verts = deform_verts.requires_grad_()
-
-        # if cfg.optim == 'adam':
-        #     optimizer = torch.optim.Adam([deform_verts], lr=cfg.lr)
-        # elif cfg.optim == 'sgd':
-        #     optimizer = torch.optim.SGD([deform_verts], lr=cfg.lr, momentum=0.9)
-        # else:
-        #     assert False, 'Wrong optimizer!'
-        #lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9990, last_epoch=-1)
 
         attack_success = torch.zeros(b).cuda()
         for step in range(cfg.iter_max_steps):
@@ -258,7 +247,7 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir):
             # new_src_mesh = src_mesh.offset_verts(deform_verts)
             input_curr_iter = sample_points_from_meshes(new_src_mesh, 1024).permute(0,2,1)
             if cfg.curv_loss_weight !=0:
-                normal_curr_iter = estimate_normal(input_curr_iter, k=8)
+                normal_curr_iter = estimate_pointcloud_normals(pc_ori.permute(0,2,1), neighborhood_size=8, disambiguate_directions=True).permute(0,2,1)
             else:
                 normal_curr_iter = 0
 
@@ -304,7 +293,7 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir):
                         iter_best_loss[k] = metric
                         iter_best_score[k] = torch.max(batch_k_adv_output,1)[1].mode().values.item()
 
-            _, loss, dis_loss, hd_loss, nor_loss, constrain_loss, info = _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, new_src_mesh, target, scale_const, cfg, targeted)
+            _, loss, dis_loss, hd_loss, nor_loss, constrain_loss, info = _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, kappa_ori, new_src_mesh, target, scale_const, cfg, targeted)
 
             optimizer.zero_grad()
             loss.backward()

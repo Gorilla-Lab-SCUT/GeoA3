@@ -113,6 +113,12 @@ if __name__ == '__main__':
 
     for i, data in enumerate(test_loader):
         vertice, faces_idx, gt_label = data[0], data[1], data[2]
+
+        bs, l, nv, _ = vertice.size()
+        _, _, nf, _ = faces_idx.size()
+        b = bs*l
+        vertice = vertice.view(b, nv, 3).cuda()
+        faces_idx = faces_idx.view(b, nf, 3).cuda()
         gt_target = gt_label.view(-1).cuda()
         src_mesh = Meshes(verts=vertice, faces=faces_idx).cuda()
         pc_ori = sample_points_from_meshes(src_mesh, 1024).permute(0,2,1)
