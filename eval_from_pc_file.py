@@ -85,10 +85,10 @@ def main():
 
     # model
     print('=>Loading model')
-    model_path = os.path.join('Pretrained', cfg.arch, str(cfg.npoint), 'model_best.pth.tar')
+    model_path = os.path.join('Pretrained', cfg.arch, str(1024), 'model_best.pth.tar')
     if cfg.arch == 'PointNet':
         from Model.PointNet import PointNet
-        net = PointNet(cfg.classes, npoint=cfg.npoint).cuda()
+        net = PointNet(cfg.classes, npoint=1024).cuda()
     elif cfg.arch == 'PointNetPP':
         #from Model.PointNetPP_msg import PointNet2ClassificationMSG
         #net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
@@ -96,7 +96,7 @@ def main():
         net = PointNet2ClassificationSSG(use_xyz=True, use_normal=False).cuda()
     elif cfg.arch == 'DGCNN':
         from Model.DGCNN import DGCNN_cls
-        net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
+        net = DGCNN_cls(k=20, emb_dims=1024, dropout=0.5).cuda()
     else:
         assert False, 'Not support such arch.'
 
@@ -183,7 +183,7 @@ def main():
                 pass
     else:
         for i, pc_name in enumerate(file_names):
-            if ".xyz" in pc_name:
+            if ".xyz" or ".obj" in pc_name:
                 curr_pc = []
                 if ".xyz" in pc_name:
                     points = read_off_lines_from_xyz(os.path.join(cfg.datadir, pc_name), cfg.npoint)

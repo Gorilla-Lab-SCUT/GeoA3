@@ -8,6 +8,7 @@ import time
 
 import numpy as np
 import scipy.io as sio
+from pytorch3d.ops import knn_points, knn_gather
 import torch
 from torch.autograd import Variable
 import torchvision
@@ -29,16 +30,6 @@ color_list = ['r','b','g']
 def _normalize(input, p=2, dim=1, eps=1e-12):
     return input / input.norm(p, dim, keepdim=True).clamp(min=eps).expand_as(input)
 
-def compute_theta_normal(pc, normal, k):
-    b,_,n=pc.size()
-    inter_dis = ((pc.unsqueeze(3) - pc.unsqueeze(2))**2).sum(1)
-    inter_idx = torch.topk(inter_dis, k+1, dim=2, largest=False, sorted=True)[1][:, :, 1:].contiguous()
-    nn_pts = torch.gather(pc, 2, inter_idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)
-    vectors = nn_pts - pc.unsqueeze(3)
-    vectors = _normalize(vectors)
-
-    return torch.abs((vectors*normal.unsqueeze(3)).sum(1)).mean(2) #b*n
-
 def jitter_input(data, sigma=0.01, clip=0.05):
     assert data.size(1) == 3
     assert(clip > 0)
@@ -51,10 +42,13 @@ def estimate_normal(pc, k):
         # pc : [b, 3, n]
         b,_,n=pc.size()
         # get knn point set matrix
-        dis = ((pc.unsqueeze(3) - pc.unsqueeze(2) + 1e-12)**2).sum(1).sqrt()
-        dis, idx = torch.topk(dis, k+1, dim=2, largest=False, sorted=True)
-        idx = idx[:, :, 1:].contiguous()    #idx:[b, n, k]
-        nn_pts = torch.gather(pc, 2, idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)   #nn_pts:[b, 3, n, k]
+        #dis = ((pc.unsqueeze(3) - pc.unsqueeze(2) + 1e-12)**2).sum(1).sqrt()
+        #dis, idx = torch.topk(dis, k+1, dim=2, largest=False, sorted=True)
+        #idx = idx[:, :, 1:].contiguous()    #idx:[b, n, k]
+        #nn_pts = torch.gather(pc, 2, idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)   #nn_pts:[b, 3, n, k]
+        inter_KNN = knn_points(pc.permute(0,2,1), pc.permute(0,2,1), K=k+1) #[dists:[b,n,k+1], idx:[b,n,k+1]]
+        nn_pts = knn_gather(pc.permute(0,2,1), inter_KNN.idx).permute(0,3,1,2)[:,:,:,1:].contiguous() # [b, 3, n ,k]
+
         # get covariance matrix and smallest eig-vector of individual point
         normal_vector = []
         for i in range(b):
@@ -101,17 +95,22 @@ def estimate_normal(pc, k):
 def estimate_normal_via_ori_normal(pc_adv, pc_ori, normal_ori, k):
     # pc_adv, pc_ori, normal_ori : [b,3,n]
     b,_,n=pc_adv.size()
-    inter_dis = ((pc_adv.unsqueeze(3) - pc_ori.unsqueeze(2))**2).sum(1)
-    inter_value, inter_idx = torch.topk(inter_dis, k, dim=2, largest=False, sorted=True) #not the same variable, use k=k
-    inter_value = inter_value[:, :, 0].contiguous()
-    inter_idx = inter_idx.contiguous()
-    normal_pts = torch.gather(normal_ori, 2, inter_idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)
+    #inter_dis = ((pc_adv.unsqueeze(3) - pc_ori.unsqueeze(2))**2).sum(1)
+    #inter_value, inter_idx = torch.topk(inter_dis, k, dim=2, largest=False, sorted=True) #not the same variable, use k=k
+    #inter_value = inter_value[:, :, 0].contiguous()
+    #inter_idx = inter_idx.contiguous()
+    #normal_pts = torch.gather(normal_ori, 2, inter_idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)
+    intra_KNN = knn_points(pc_adv.permute(0,2,1), pc_ori.permute(0,2,1), K=k) #[dists:[b,n,k], idx:[b,n,k]]
+    inter_value = intra_KNN.dists[:, :, 0].contiguous()
+    inter_idx = intra_KNN.idx.permute(0,2,1).contiguous()
+    normal_pts = knn_gather(normal_ori.permute(0,2,1), intra_KNN.idx).permute(0,3,1,2).contiguous() # [b, 3, n ,k]
+
     normal_pts_avg = normal_pts.mean(dim=-1)
     normal_pts_avg = normal_pts_avg/(normal_pts_avg.norm(dim=1)+1e-12)
 
     # If the points are not modified (distance = 0), use the normal directly from the original
     # one. Otherwise, use the mean of the normals of the k-nearest points.
-    normal_ori_select = torch.gather(normal_ori, 2, inter_idx[:,:,0].view(b,1,n).expand(b,3,n)).view(b,3,n)
+    normal_ori_select = normal_pts[:,:,:,0]
     condition = (inter_value<1e-6).unsqueeze(1).expand_as(normal_ori_select)
     normals_estimated = torch.where(condition, normal_ori_select, normal_pts_avg)
 
@@ -128,10 +127,13 @@ def estimate_perpendicular(pc, k, sigma=0.01, clip=0.05):
         # pc : [b, 3, n]
         b,_,n=pc.size()
         # get knn point set matrix
-        dis = ((pc.unsqueeze(3) - pc.unsqueeze(2) + 1e-12)**2).sum(1).sqrt()
-        dis, idx = torch.topk(dis, k+1, dim=2, largest=False, sorted=True)
-        idx = idx[:, :, 1:].contiguous()    #idx:[b, n, k]
-        nn_pts = torch.gather(pc, 2, idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)   #nn_pts:[b, 3, n, k]
+        #dis = ((pc.unsqueeze(3) - pc.unsqueeze(2) + 1e-12)**2).sum(1).sqrt()
+        #dis, idx = torch.topk(dis, k+1, dim=2, largest=False, sorted=True)
+        #idx = idx[:, :, 1:].contiguous()    #idx:[b, n, k]
+        #nn_pts = torch.gather(pc, 2, idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)   #nn_pts:[b, 3, n, k]
+        inter_KNN = knn_points(pc.permute(0,2,1), pc.permute(0,2,1), K=k+1) #[dists:[b,n,k+1], idx:[b,n,k+1]]
+        nn_pts = knn_gather(pc.permute(0,2,1), inter_KNN.idx).permute(0,3,1,2)[:,:,:,1:].contiguous() # [b, 3, n ,k]
+
         # get covariance matrix and smallest eig-vector of individual point
         perpendi_vector_1 = []
         perpendi_vector_2 = []
@@ -197,6 +199,23 @@ def farthest_points_sample(obj_points, num_points):
     res_points = torch.gather(obj_points, 2, selected.unsqueeze(1).expand(b, 3, num_points))
 
     return res_points
+
+def farthest_points_normal_sample(obj_points, obj_normal, num_points):
+    assert obj_points.size(1) == 3
+    assert obj_points.size(2) == obj_normal.size(2)
+    b,_,n = obj_points.size()
+
+    selected = torch.randint(obj_points.size(2), [obj_points.size(0),1]).cuda()
+    dists = torch.full([obj_points.size(0), obj_points.size(2)], fill_value = np.inf).cuda()
+
+    for _ in range(num_points - 1):
+        dists = torch.min(dists, torch.norm(obj_points - torch.gather(obj_points, 2, selected[:,-1].unsqueeze(1).unsqueeze(2).expand(b,3,1)), dim = 1))
+        selected = torch.cat([selected, torch.argmax(dists, dim=1, keepdim=True)], dim = 1)
+    res_points = torch.gather(obj_points, 2, selected.unsqueeze(1).expand(b, 3, num_points))
+    res_normal = torch.gather(obj_normal, 2, selected.unsqueeze(1).expand(b, 3, num_points))
+
+    return res_points, res_normal
+
 
 def pad_larger_tensor_with_index(small_verts, small_in_larger_idx_list, larger_tensor_shape):
     full_deform_verts = torch.zeros(larger_tensor_shape,3).cuda()

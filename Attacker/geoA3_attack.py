@@ -6,8 +6,10 @@ import os
 import sys
 import time
 
+import ipdb
 import numpy as np
 import open3d as o3d
+from pytorch3d.ops import knn_points, knn_gather
 import scipy.io as sio
 import torch
 import torch.nn as nn
@@ -20,8 +22,8 @@ ROOT_DIR = BASE_DIR + '/../'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
-from utility import compute_theta_normal, estimate_perpendicular, _compare
-from loss_utils import norm_l2_loss, chamfer_loss, hausdorff_loss, normal_loss, uniform_loss
+from utility import estimate_perpendicular, _compare, farthest_points_sample
+from loss_utils import norm_l2_loss, chamfer_loss, hausdorff_loss, curvature_loss, uniform_loss, _get_kappa_ori, _get_kappa_adv
 
 def resample_reconstruct_from_pc(cfg, output_file_name, pc, normal=None, reconstruct_type='PRS'):
     assert pc.size() == 2
@@ -54,44 +56,28 @@ def resample_reconstruct_from_pc(cfg, output_file_name, pc, normal=None, reconst
 
     return o3d.geometry.TriangleMesh.sample_points_uniformly(output_mesh, number_of_points=cfg.npoint)
 
-def offset_proj(offset, normal, project='dir'):
+def offset_proj(offset, ori_pc, ori_normal, project='dir'):
     # offset: shape [b, 3, n], perturbation offset of each point
     # normal: shape [b, 3, n], normal vector of the object
 
-    inner_prod = (offset * normal).sum(1) #[b, n]
-    condition_inner = (inner_prod>=0).unsqueeze(1).expand_as(offset) #[b, 3, n]
+    condition_inner = torch.zeros(offset.shape).cuda().byte()
 
-    if project == 'dir':
-        # 1) vng = Normal x Perturb
-        # 2) vref = vng x Normal
-        # 3) Project Perturb onto vref
-        #    Note that the length of vref should be greater than zero
+    intra_KNN = knn_points(offset.permute(0,2,1), ori_pc.permute(0,2,1), K=1) #[dists:[b,n,1], idx:[b,n,1]]
+    normal = knn_gather(ori_normal.permute(0,2,1), intra_KNN.idx).permute(0,3,1,2).squeeze(3).contiguous() # [b, 3, n]
 
-        vng = torch.cross(normal, offset) #[b, 3, n]
-        vng_len = (vng**2).sum(1, keepdim=True).sqrt() #[b, n]
+    normal_len = (normal**2).sum(1, keepdim=True).sqrt()
+    normal_len_expand = normal_len.expand_as(offset) #[b, 3, n]
 
-        vref = torch.cross(vng, normal) #[b, 3, n]
-        vref_len = (vref**2).sum(1, keepdim=True).sqrt() #[b, 1, n]
-        vref_len_expand = vref_len.expand_as(offset) #[b, 3, n]
+    # add 1e-6 to avoid dividing by zero
+    offset_projected = (offset * normal / (normal_len_expand + 1e-6)).sum(1,keepdim=True) * normal / (normal_len_expand + 1e-6)
 
-        # add 1e-6 to avoid dividing by zero
-        offset_projected = (offset * vref / (vref_len_expand + 1e-6)).sum(1,keepdim=True) * vref / (vref_len_expand + 1e-6)
-
-        # if the length of vng < 1e-6, let projected vector = (0, 0, 0)
-        # it means the Normal and Perturb are just in opposite direction
-        condition_vng = vng_len > 1e-6
-        offset_projected = torch.where(condition_vng, offset_projected, torch.zeros_like(offset_projected))
-
-        # if inner_prod < 0, let perturb be the projected ones
-        offset = torch.where(condition_inner, offset, offset_projected)
-    else:
-        # without projection, let the perturb be (0, 0, 0) if inner_prod < 0
-        offset = torch.where(condition_inner, offset, torch.zeros_like(offset))
+    # let perturb be the projected ones
+    offset = torch.where(condition_inner, offset, offset_projected)
 
     return offset
 
 
-def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, target, scale_const, cfg, targeted):
+def _forward_step(net, pc_ori, input_curr_iter, normal_ori, ori_kappa, target, scale_const, cfg, targeted):
     #needed cfg:[arch, classes, cls_loss_type, confidence, dis_loss_type, is_cd_single_side, dis_loss_weight, hd_loss_weight, curv_loss_weight, curv_loss_knn]
     b,_,n=input_curr_iter.size()
     output_curr_iter = net(input_curr_iter)
@@ -153,13 +139,8 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, 
 
     # nor loss
     if cfg.curv_loss_weight !=0:
-        curv_loss,_ = normal_loss(input_curr_iter, pc_ori, normal_curr_iter, None, cfg.curv_loss_knn)
-
-        intra_dis = ((input_curr_iter.unsqueeze(3) - pc_ori.unsqueeze(2))**2).sum(1)
-        intra_idx = torch.topk(intra_dis, 1, dim=2, largest=False, sorted=True)[1]
-        knn_theta_normal = torch.gather(theta_normal, 1, intra_idx.view(b,n).expand(b,n))
-        curv_loss = ((curv_loss - knn_theta_normal)**2).mean(-1)
-
+        adv_kappa, normal_curr_iter = _get_kappa_adv(input_curr_iter, pc_ori, normal_ori, cfg.curv_loss_knn)
+        curv_loss = curvature_loss(input_curr_iter, pc_ori, adv_kappa, ori_kappa)
         constrain_loss = constrain_loss + cfg.curv_loss_weight * curv_loss
         info = info+'curv_loss : {0:6.4f}\t'.format(curv_loss.mean().item())
     else:
@@ -177,9 +158,9 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, 
     loss_n = cls_loss + scale_const * constrain_loss
     loss = loss_n.mean()
 
-    return output_curr_iter, loss, loss_n, cls_loss, dis_loss, hd_loss, curv_loss, constrain_loss, info
+    return output_curr_iter, normal_curr_iter, loss, loss_n, cls_loss, dis_loss, hd_loss, curv_loss, constrain_loss, info
 
-def attack(net, input_data, cfg, i, loader_len):
+def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
     #needed cfg:[arch, classes, attack_label, initial_const, lr, optim, binary_max_steps, iter_max_steps, metric,
     #  cls_loss_type, confidence, dis_loss_type, is_cd_single_side, dis_loss_weight, hd_loss_weight, curv_loss_weight, curv_loss_knn,
     #  is_pre_jitter_input, calculate_project_jitter_noise_iter, jitter_k, jitter_sigma, jitter_clip,
@@ -214,7 +195,7 @@ def attack(net, input_data, cfg, i, loader_len):
         target = input_data[3].view(-1).cuda()
 
     if cfg.curv_loss_weight !=0:
-        theta_normal = compute_theta_normal(pc_ori, normal_ori, cfg.curv_loss_knn)
+        theta_normal = _get_kappa_ori(pc_ori, normal_ori, cfg.curv_loss_knn)
     else:
         theta_normal = None
 
@@ -246,15 +227,23 @@ def attack(net, input_data, cfg, i, loader_len):
             assert False, 'Not support such optimizer.'
 
         for step in range(cfg.iter_max_steps):
-            input_curr_iter = input_all
-            normal_curr_iter = normal_ori
+            if input_all.size(2) > cfg.npoint:
+                input_curr_iter = farthest_points_sample(input_all, cfg.npoint)
+            else:
+                input_curr_iter = input_all
+
+            #input_curr_iter = input_all
 
             with torch.no_grad():
-                output = net(input_all.clone())
+                if input_all.size(2) > cfg.npoint:
+                    eval_points = farthest_points_sample(input_all, cfg.npoint)
+                else:
+                    eval_points = input_all
+
+                output = net(eval_points)
 
                 for k in range(b):
-                    output_logit = output[k]
-                    output_label = torch.argmax(output_logit).item()
+                    output_label = torch.argmax(output[k]).item()
                     metric = constrain_loss[k].item()
 
                     if _compare(output_label, target[k], gt_target[k].cuda(), targeted).item() and (metric <best_loss[k]):
@@ -273,10 +262,9 @@ def attack(net, input_data, cfg, i, loader_len):
                     project_jitter_noise = project_jitter_noise.clone()
                 input_curr_iter.data  = input_curr_iter.data  + project_jitter_noise
 
-            _, loss, loss_n, cls_loss, dis_loss, hd_loss, nor_loss, constrain_loss, info = _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, target, scale_const, cfg, targeted)
+            _, normal_curr_iter, loss, loss_n, cls_loss, dis_loss, hd_loss, nor_loss, constrain_loss, info = _forward_step(net, pc_ori, input_curr_iter, normal_ori, theta_normal, target, scale_const, cfg, targeted)
 
             all_loss_list[step] = loss_n.detach().tolist()
-            #dis_loss_hist[step] = cls_loss.detach().tolist()
 
             optimizer.zero_grad()
             if cfg.is_pre_jitter_input:
@@ -286,16 +274,38 @@ def attack(net, input_data, cfg, i, loader_len):
                 input_all.grad = input_curr_iter.grad
             optimizer.step()
 
+            # for saving
+            if (step%50 == 0) and cfg.is_debug:
+                fout = open(os.path.join(saved_dir, 'Obj', str(step)+'bf.xyz'), 'w')
+                k=0
+                for m in range(input_curr_iter.shape[2]):
+                    fout.write('%f %f %f %f %f %f\n' % (input_curr_iter[k, 0, m], input_curr_iter[k, 1, m], input_curr_iter[k, 2, m], normal_curr_iter[k, 0, m], normal_curr_iter[k, 1, m], normal_curr_iter[k, 2, m]))
+                fout.close()
+
             if cfg.is_pro_grad:
                 with torch.no_grad():
-                    offset = input_curr_iter - pc_ori
-                    proj_offset = offset_proj(offset, normal_curr_iter)
+                    offset = input_all - pc_ori
+                    proj_offset = offset_proj(offset, pc_ori, normal_ori)
                     input_all.data = (pc_ori + proj_offset).data
 
-            info = '[{5}/{6}][{0}/{1}][{2}/{3}] \t loss: {4:6.4f}\t'.format(search_step+1, cfg.binary_max_steps, step+1, cfg.iter_max_steps, loss.item(), i, loader_len) + info
+            # for saving
+            if (step%50 == 0) and cfg.is_debug:
+                fout = open(os.path.join(saved_dir, 'Obj', str(step)+'af.xyz'), 'w')
+                k=0
+                for m in range(input_all.shape[2]):
+                    fout.write('%f %f %f %f %f %f\n' % (input_all[k, 0, m], input_all[k, 1, m], input_all[k, 2, m], normal_ori[k, 0, m], normal_ori[k, 1, m], normal_ori[k, 2, m]))
+                fout.close()
+
+            if cfg.is_debug:
+                info = '[{5}/{6}][{0}/{1}][{2}/{3}] \t loss: {4:6.4f}\t output:{7}\t'.format(search_step+1, cfg.binary_max_steps, step+1, cfg.iter_max_steps, loss.item(), i, loader_len, output_label) + info
+            else:
+                info = '[{5}/{6}][{0}/{1}][{2}/{3}] \t loss: {4:6.4f}\t'.format(search_step+1, cfg.binary_max_steps, step+1, cfg.iter_max_steps, loss.item(), i, loader_len) + info
 
             if (step+1) % step_print_freq == 0 or step == cfg.iter_max_steps - 1:
                 print(info)
+
+        if cfg.is_debug:
+            ipdb.set_trace()
 
         # adjust the scale constants
         for k in range(b):

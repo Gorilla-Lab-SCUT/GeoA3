@@ -7,6 +7,7 @@ import sys
 import time
 
 import numpy as np
+from pytorch3d.ops import knn_points, knn_gather
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -19,7 +20,7 @@ ROOT_DIR = BASE_DIR + '/../'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'Model'))
 from pointnet2_ops_lib.pointnet2_ops import pointnet2_utils
-from utility import _normalize, compute_theta_normal
+from utility import _normalize
 
 
 def norm_l2_loss(adv_pc, ori_pc):
@@ -41,26 +42,53 @@ def hausdorff_loss(adv_pc, ori_pc):
     dis = ((adv_pc.unsqueeze(3) - ori_pc.unsqueeze(2))**2).sum(1)
     return torch.max(torch.min(dis, dim=2)[0], dim=1)[0]
 
-def normal_loss(adv_pc, ori_pc, ori_normal, theta_normal_var, k=2):
+
+def _get_kappa_ori(pc, normal, k=2):
+    b,_,n=pc.size()
+    #inter_dis = ((pc.unsqueeze(3) - pc.unsqueeze(2))**2).sum(1)
+    #inter_idx = torch.topk(inter_dis, k+1, dim=2, largest=False, sorted=True)[1][:, :, 1:].contiguous()
+    #nn_pts = torch.gather(pc, 2, inter_idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)
+    inter_KNN = knn_points(pc.permute(0,2,1), pc.permute(0,2,1), K=k+1) #[dists:[b,n,k+1], idx:[b,n,k+1]]
+    nn_pts = knn_gather(pc.permute(0,2,1), inter_KNN.idx).permute(0,3,1,2)[:,:,:,1:].contiguous() # [b, 3, n ,k]
+    vectors = nn_pts - pc.unsqueeze(3)
+    vectors = _normalize(vectors)
+
+    return torch.abs((vectors*normal.unsqueeze(3)).sum(1)).mean(2) # [b, n]
+
+def _get_kappa_adv(adv_pc, ori_pc, ori_normal, k=2):
     b,_,n=adv_pc.size()
     # compute knn between advPC and oriPC to get normal n_p
-    intra_dis = ((adv_pc.unsqueeze(3) - ori_pc.unsqueeze(2))**2).sum(1)
-    intra_idx = torch.topk(intra_dis, 1, dim=2, largest=False, sorted=True)[1]
-    normal = torch.gather(ori_normal, 2, intra_idx.view(b,1,n).expand(b,3,n))
-    if theta_normal_var is not None:
-        # print(theta_normal_var)
-        the_normal_loss = torch.gather(theta_normal_var, 1, intra_idx.view(b, n))
-    else:
-        the_normal_loss = None
+    #intra_dis = ((adv_pc.unsqueeze(3) - ori_pc.unsqueeze(2))**2).sum(1)
+    #intra_idx = torch.topk(intra_dis, 1, dim=2, largest=False, sorted=True)[1]
+    #normal = torch.gather(ori_normal, 2, intra_idx.view(b,1,n).expand(b,3,n))
+    intra_KNN = knn_points(adv_pc.permute(0,2,1), ori_pc.permute(0,2,1), K=1) #[dists:[b,n,1], idx:[b,n,1]]
+    normal = knn_gather(ori_normal.permute(0,2,1), intra_KNN.idx).permute(0,3,1,2).squeeze(3).contiguous() # [b, 3, n]
 
     # compute knn between advPC and itself to get \|q-p\|_2
-    inter_dis = ((adv_pc.unsqueeze(3) - adv_pc.unsqueeze(2))**2).sum(1)
-    inter_idx = torch.topk(inter_dis, k+1, dim=2, largest=False, sorted=True)[1][:, :, 1:].contiguous()
-    nn_pts = torch.gather(adv_pc, 2, inter_idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)
+    #inter_dis = ((adv_pc.unsqueeze(3) - adv_pc.unsqueeze(2))**2).sum(1)
+    #inter_idx = torch.topk(inter_dis, k+1, dim=2, largest=False, sorted=True)[1][:, :, 1:].contiguous()
+    #nn_pts = torch.gather(adv_pc, 2, inter_idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)
+    inter_KNN = knn_points(adv_pc.permute(0,2,1), adv_pc.permute(0,2,1), K=k+1) #[dists:[b,n,k+1], idx:[b,n,k+1]]
+    nn_pts = knn_gather(adv_pc.permute(0,2,1), inter_KNN.idx).permute(0,3,1,2)[:,:,:,1:].contiguous() # [b, 3, n ,k]
     vectors = nn_pts - adv_pc.unsqueeze(3)
     vectors = _normalize(vectors)
 
-    return torch.abs((vectors*normal.unsqueeze(3)).sum(1)).mean(2), the_normal_loss
+    return torch.abs((vectors*normal.unsqueeze(3)).sum(1)).mean(2), normal # [b, n], [b, 3, n]
+
+def curvature_loss(adv_pc, ori_pc, adv_kappa, ori_kappa, k=2):
+    b,_,n=adv_pc.size()
+
+    # intra_dis = ((input_curr_iter.unsqueeze(3) - pc_ori.unsqueeze(2))**2).sum(1)
+    # intra_idx = torch.topk(intra_dis, 1, dim=2, largest=False, sorted=True)[1]
+    # knn_theta_normal = torch.gather(theta_normal, 1, intra_idx.view(b,n).expand(b,n))
+    # curv_loss = ((curv_loss - knn_theta_normal)**2).mean(-1)
+
+    intra_KNN = knn_points(adv_pc.permute(0,2,1), ori_pc.permute(0,2,1), K=1) #[dists:[b,n,1], idx:[b,n,1]]
+    onenn_ori_kappa = torch.gather(ori_kappa, 1, intra_KNN.idx.squeeze(-1)).contiguous() # [b, n]
+
+    curv_loss = ((adv_kappa - onenn_ori_kappa)**2).mean(-1)
+
+    return curv_loss
 
 def displacement_loss(adv_pc, ori_pc, k=16):
     b,_,n=adv_pc.size()
@@ -100,10 +128,11 @@ def distance_kmean_loss(pc, k):
 
 def kNN_smoothing_loss(adv_pc, k, threshold_coef=1.05):
     b,_,n=adv_pc.size()
-    dis = ((adv_pc.unsqueeze(3) - adv_pc.unsqueeze(2))**2).sum(1) #[b,n,n]
-    dis, idx = torch.topk(dis, k+1, dim=2, largest=False, sorted=True)#[b,n,k+1]
+    #dis = ((adv_pc.unsqueeze(3) - adv_pc.unsqueeze(2))**2).sum(1) #[b,n,n]
+    #dis, idx = torch.topk(dis, k+1, dim=2, largest=False, sorted=True)#[b,n,k+1]
+    inter_KNN = knn_points(adv_pc.permute(0,2,1), adv_pc.permute(0,2,1), K=k+1) #[dists:[b,n,k+1], idx:[b,n,k+1]]
 
-    knn_dis = dis[:, :, 1:].contiguous().mean(-1)#[b,n]
+    knn_dis = inter_KNN.dists[:, :, 1:].contiguous().mean(-1)#[b,n]
     knn_dis_mean = knn_dis.mean(-1) #[b]
     knn_dis_std = knn_dis.std(-1) #[b]
     threshold = knn_dis_mean + threshold_coef * knn_dis_std #[b]
@@ -134,10 +163,11 @@ def uniform_loss(adv_pc, percentages=[0.004,0.006,0.008,0.010,0.012], radius=1.0
         grouped_pcd = torch.cat(torch.unbind(grouped_pcd, axis=1), axis=0)
 
         grouped_pcd = grouped_pcd.permute(0,2,1).contiguous()
-        dis = torch.sqrt(((grouped_pcd.unsqueeze(3) - grouped_pcd.unsqueeze(2))**2).sum(1)+1e-12) # (batch_size*npoint, nsample, nsample)
-        var, _ = torch.topk(dis, k+1, dim=2, largest=False, sorted=True) # (batch_size*npoint, nsample, k+1)
+        #dis = torch.sqrt(((grouped_pcd.unsqueeze(3) - grouped_pcd.unsqueeze(2))**2).sum(1)+1e-12) # (batch_size*npoint, nsample, nsample)
+        #dists, _ = torch.topk(dis, k+1, dim=2, largest=False, sorted=True) # (batch_size*npoint, nsample, k+1)
+        inter_KNN = knn_points(grouped_pcd.permute(0,2,1), grouped_pcd.permute(0,2,1), K=k+1) #[dists:[b,n,k+1], idx:[b,n,k+1]]
 
-        uniform_dis = var[:, :, 1:].contiguous()
+        uniform_dis = inter_KNN.dists[:, :, 1:].contiguous()
         uniform_dis = torch.sqrt(torch.abs(uniform_dis)+1e-12)
         uniform_dis = uniform_dis.mean(axis=[-1])
         uniform_dis = (uniform_dis - expect_len)**2 / (expect_len + 1e-12)

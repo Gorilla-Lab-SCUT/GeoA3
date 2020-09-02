@@ -19,7 +19,7 @@ ROOT_DIR = BASE_DIR + '/../'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
-from utility import compute_theta_normal, estimate_normal_via_ori_normal, _compare
+from utility import estimate_normal_via_ori_normal, _compare
 from loss_utils import pseudo_chamfer_loss,kNN_smoothing_loss
 
 def random_sample_pointcloud(pc, normal, pc_ori, num_samples):

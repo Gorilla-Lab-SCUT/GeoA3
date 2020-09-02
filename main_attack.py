@@ -57,7 +57,7 @@ parser.add_argument('--hd_loss_weight', type=float, default=0.1, help='')
 parser.add_argument('--curv_loss_weight', type=float, default=1.0, help='')
 parser.add_argument('--curv_loss_knn', type=int, default=16, help='')
 ## uniform loss
-parser.add_argument('--uniform_loss_weight', type=float, default=1.0, help='')
+parser.add_argument('--uniform_loss_weight', type=float, default=0.0, help='')
 ## KNN smoothing loss
 parser.add_argument('--knn_smoothing_loss_weight', type=float, default=5.0, help='')
 parser.add_argument('--knn_smoothing_k', type=int, default=5, help='')
@@ -89,6 +89,7 @@ parser.add_argument('--is_record_loss', action='store_true', default=False, help
 parser.add_argument('-j', '--num_workers', default=8, type=int, metavar='N', help='number of data loading workers (default: 8)')
 parser.add_argument('--is_save_normal', action='store_true', default=False, help='')
 parser.add_argument('--is_debug', action='store_true', default=False, help='')
+parser.add_argument('--is_low_memory', action='store_true', default=False, help='')
 
 cfg  = parser.parse_args()
 print(cfg, '\n')
@@ -192,8 +193,6 @@ def main():
     test_size = test_dataset.__len__()
 
     if (cfg.is_save_normal) & (cfg.dense_data_dir_file is not None):
-        # from Provider.modelnet_pure import ModelNet_pure
-        # dense_test_dataset = ModelNet_pure(data_mat_file=cfg.dense_data_dir_file)
         dense_test_dataset = ModelNet40(data_mat_file=cfg.dense_data_dir_file, attack_label=cfg.attack_label, resample_num=-1)
         dense_test_loader = torch.utils.data.DataLoader(dense_test_dataset, batch_size=cfg.batch_size, shuffle=False, drop_last=False, num_workers=cfg.num_workers, pin_memory=True)
         dense_test_size = dense_test_dataset.__len__()
@@ -291,7 +290,7 @@ def main():
             print("Prec@1 {top1.avg:.3f}".format(top1=test_acc))
 
         elif cfg.attack == 'GeoA3':
-            adv_pc, targeted_label, attack_success_indicator, best_attack_step, loss = geoA3_attack.attack(net, data, cfg, i, len(test_loader))
+            adv_pc, targeted_label, attack_success_indicator, best_attack_step, loss = geoA3_attack.attack(net, data, cfg, i, len(test_loader), saved_dir)
             eval_num = 1
         elif cfg.attack == 'Xiang':
             adv_pc, targeted_label, attack_success_indicator, best_attack_step = Xiang_attack.attack(net, data, cfg, i, len(test_loader))
@@ -338,7 +337,8 @@ def main():
             saved_pc = adv_pc.cpu().clone().numpy()
 
             for k in range(b):
-                if attack_success[k].item() and attack_success_indicator[k]:
+                #if attack_success[k].item() and attack_success_indicator[k]:
+                if attack_success_indicator[k].item():
                     num_attack_success += 1
                     name = 'adv_' + str(cnt_ins+k//num_attack_classes) + '_gt' + str(gt_target[k].item()) + '_attack' + str(torch.max(test_adv_output,1)[1].data[k].item())
 

@@ -23,10 +23,10 @@ ROOT_DIR = BASE_DIR + '/../'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
-from utility import compute_theta_normal, estimate_normal, estimate_perpendicular, _compare, pad_larger_tensor_with_index
-from loss_utils import chamfer_loss, hausdorff_loss, normal_loss
+from utility import estimate_normal, estimate_perpendicular, _compare, pad_larger_tensor_with_index
+from loss_utils import chamfer_loss, hausdorff_loss,  _get_kappa_ori, _get_kappa_adv, curvature_loss
 
-def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, new_src_mesh, target, scale_const, cfg, targeted):
+def _forward_step(net, pc_ori, input_curr_iter, normal_ori, ori_kappa, new_src_mesh, target, scale_const, cfg, targeted):
     #needed cfg:[arch, classes, cls_loss_type, confidence, dis_loss_type, is_cd_single_side, dis_loss_weight, hd_loss_weight, curv_loss_weight, curv_loss_knn]
     b,_,n=input_curr_iter.size()
     output_curr_iter = net(input_curr_iter)
@@ -88,12 +88,8 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_curr_iter, theta_normal, 
 
     # nor loss
     if cfg.curv_loss_weight != 0:
-        curv_loss,_ = normal_loss(input_curr_iter, pc_ori, normal_curr_iter, None, cfg.curv_loss_knn)
-
-        intra_dis = ((input_curr_iter.unsqueeze(3) - pc_ori.unsqueeze(2))**2).sum(1)
-        intra_idx = torch.topk(intra_dis, 1, dim=2, largest=False, sorted=True)[1]
-        knn_theta_normal = torch.gather(theta_normal, 1, intra_idx.view(b,n).expand(b,n))
-        curv_loss = ((curv_loss - knn_theta_normal)**2).mean(-1)
+        adv_kappa, normal_curr_iter = _get_kappa_adv(input_curr_iter, pc_ori, normal_ori, cfg.curv_loss_knn)
+        curv_loss = curvature_loss(input_curr_iter, pc_ori, adv_kappa, ori_kappa)
 
         constrain_loss = constrain_loss + cfg.curv_loss_weight * curv_loss
         info = info+'curv_loss : {0:6.3f}\t'.format(curv_loss.mean().item())
@@ -171,7 +167,7 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir):
         pc_ori = sample_points_from_meshes(ori_mesh, 1024).permute(0,2,1)
         if cfg.curv_loss_weight !=0:
             normal_ori = estimate_normal(pc_ori, k=8)
-            theta_normal = compute_theta_normal(pc_ori, normal_ori, cfg.curv_loss_knn)
+            theta_normal = _get_kappa_ori(pc_ori, normal_ori, cfg.curv_loss_knn)
         else:
             theta_normal = None
 
