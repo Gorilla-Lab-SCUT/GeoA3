@@ -130,6 +130,10 @@ if cfg.attack == 'GeoA3' or cfg.attack == 'Xiang' or cfg.attack == 'RA' or cfg.a
         if cfg.is_pro_grad:
             saved_dir = saved_dir + '_ProGrad'
 
+        if cfg.cc_linf != 0:
+            saved_dir = saved_dir + '_cclinf' + str(cfg.cc_linf)
+
+
         if cfg.is_pre_jitter_input:
             saved_dir = saved_dir + '_PreJitter' + str(cfg.jitter_sigma) + '_' + str(cfg.jitter_clip)
             if cfg.is_previous_jitter_input:

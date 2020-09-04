@@ -69,13 +69,24 @@ def offset_proj(offset, ori_pc, ori_normal, project='dir'):
     normal_len_expand = normal_len.expand_as(offset) #[b, 3, n]
 
     # add 1e-6 to avoid dividing by zero
-    offset_projected = (offset * normal / (normal_len_expand + 1e-6)).sum(1,keepdim=True) * normal / (normal_len_expand + 1e-6)
+    offset_projected = torch.sign(offset * normal) * (offset * normal / (normal_len_expand + 1e-6)).sum(1,keepdim=True) * normal / (normal_len_expand + 1e-6)
 
     # let perturb be the projected ones
     offset = torch.where(condition_inner, offset, offset_projected)
 
     return offset
 
+def lp_clip(offset, cc_linf):
+    lengths = (offset**2).sum(1, keepdim=True).sqrt() #[b, 1, n]
+    lengths_expand = lengths.expand_as(offset) # [b, 3, n]
+
+    condition = lengths > 1e-6
+    offset_scaled = torch.where(condition, offset / lengths_expand * cc_linf, torch.zeros_like(offset))
+
+    condition = lengths < cc_linf
+    offset = torch.where(condition, offset, offset_scaled)
+    
+    return offset
 
 def _forward_step(net, pc_ori, input_curr_iter, normal_ori, ori_kappa, target, scale_const, cfg, targeted):
     #needed cfg:[arch, classes, cls_loss_type, confidence, dis_loss_type, is_cd_single_side, dis_loss_weight, hd_loss_weight, curv_loss_weight, curv_loss_knn]
@@ -286,6 +297,12 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
                 with torch.no_grad():
                     offset = input_all - pc_ori
                     proj_offset = offset_proj(offset, pc_ori, normal_ori)
+                    input_all.data = (pc_ori + proj_offset).data
+            
+            if cfg.cc_linf != 0:
+                with torch.no_grad():
+                    offset = input_all - pc_ori
+                    proj_offset = lp_clip(offset, cfg.cc_linf)
                     input_all.data = (pc_ori + proj_offset).data
 
             # for saving
