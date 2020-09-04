@@ -138,14 +138,18 @@ python main_attack.py --data_dir_file Data/modelnet10_250instances_mesh_PointNet
     --id 7
 
 ## Reconstruction
-python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNet.mat --npoint 1024 \
+python main_attack.py --data_dir_file Data/modelnet10_250instances10000_PointNet.mat -b 1 --npoint 1024 \
     --dense_data_dir_file Data/modelnet10_250instances10000_PointNet.mat --is_save_normal \
     --arch PointNet --attack GeoA3 --attack_label All \
-    --binary_max_steps 10 --iter_max_steps 500 --lr 0.01 --initial_const 10 \
+    --binary_max_steps 5 --iter_max_steps 1000 --lr 0.001 --initial_const 500 \
     --cls_loss_type CE \
     --dis_loss_type CD --dis_loss_weight 1.0 \
     --hd_loss_weight 0.1 \
     --curv_loss_weight 1.0 --curv_loss_knn 16 \
-    --uniform_loss_weight 10.0 \
-    --is_pro_grad --id 7
+    --uniform_loss_weight 5.0 \
+    --is_pro_grad \
+    --cc_linf 0.1 \
+    --is_partial_var --knn_range 128 \
+    --is_use_lr_scheduler \
+    --id 820
 

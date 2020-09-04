@@ -222,6 +222,13 @@ def pad_larger_tensor_with_index(small_verts, small_in_larger_idx_list, larger_t
     full_deform_verts[small_in_larger_idx_list] = small_verts
     return full_deform_verts
 
+def pad_larger_tensor_with_index_batch(small_verts, small_in_larger_idx_list, larger_tensor_shape):
+    b, _, n = small_verts.size()
+    full_deform_verts = torch.zeros(b, 3, larger_tensor_shape).cuda()
+    for i in range(b):
+        full_deform_verts[i, :, small_in_larger_idx_list[i][0][1:]] = small_verts[i]
+    return full_deform_verts
+
 def read_lines_from_xyz(path, num_points):
     with open(path) as file:
         vertices = []

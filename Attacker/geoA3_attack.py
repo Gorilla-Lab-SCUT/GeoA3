@@ -22,7 +22,7 @@ ROOT_DIR = BASE_DIR + '/../'
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
-from utility import estimate_perpendicular, _compare, farthest_points_sample
+from utility import estimate_perpendicular, _compare, farthest_points_sample, pad_larger_tensor_with_index_batch
 from loss_utils import norm_l2_loss, chamfer_loss, hausdorff_loss, curvature_loss, uniform_loss, _get_kappa_ori, _get_kappa_adv
 
 def resample_reconstruct_from_pc(cfg, output_file_name, pc, normal=None, reconstruct_type='PRS'):
@@ -85,7 +85,7 @@ def lp_clip(offset, cc_linf):
 
     condition = lengths < cc_linf
     offset = torch.where(condition, offset, offset_scaled)
-    
+
     return offset
 
 def _forward_step(net, pc_ori, input_curr_iter, normal_ori, ori_kappa, target, scale_const, cfg, targeted):
@@ -225,33 +225,56 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
         iter_best_score = [-1] * b
         constrain_loss = torch.ones(b) * 1e10
 
-        init_pert = torch.FloatTensor(pc_ori.size())
-        nn.init.normal_(init_pert, mean=0, std=1e-3)
-        input_all = (pc_ori.clone() + init_pert.cuda())
-        input_all.requires_grad_()
-
-        if cfg.optim == 'adam':
-            optimizer = optim.Adam([input_all], lr=cfg.lr)
-        elif cfg.optim == 'sgd':
-            optimizer = optim.SGD([input_all], lr=cfg.lr)
-        else:
-            assert False, 'Not support such optimizer.'
-
         for step in range(cfg.iter_max_steps):
+
+            if cfg.is_partial_var:
+                if step%50 == 0:
+                    with torch.no_grad():
+                        #FIXME: how about using the critical points?
+                        init_point_idx = np.random.randint(n)
+
+                        intra_KNN = knn_points(pc_ori[:, :, init_point_idx].unsqueeze(2).permute(0,2,1), pc_ori.permute(0,2,1), K=cfg.knn_range+1) #[dists:[b,n,cfg.knn_range+1], idx:[b,n,cfg.knn_range+1]]
+                    part_offset = torch.zeros(b, 3, cfg.knn_range).cuda()
+
+                    offset = pad_larger_tensor_with_index_batch(part_offset, intra_KNN.idx.tolist(), n)
+                    nn.init.normal_(offset, mean=0, std=1e-3)
+                    offset.requires_grad_()
+
+                    if cfg.optim == 'adam':
+                        optimizer = torch.optim.Adam([offset], lr=cfg.lr)
+                    elif cfg.optim == 'sgd':
+                        optimizer = torch.optim.SGD([offset], lr=cfg.lr, momentum=0.9)
+                    else:
+                        assert False, 'Wrong optimizer!'
+                    lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9990, last_epoch=-1)
+
+                    try:
+                        periodical_pc = input_all.clone()
+                    except:
+                        periodical_pc = pc_ori.clone()
+            else:
+                if step == 0:
+                    offset = torch.zeros(b, 3, n).cuda()
+                    nn.init.normal_(offset, mean=0, std=1e-3)
+                    offset.requires_grad_()
+
+                    if cfg.optim == 'adam':
+                        optimizer = optim.Adam([offset], lr=cfg.lr)
+                    elif cfg.optim == 'sgd':
+                        optimizer = optim.SGD([offset], lr=cfg.lr)
+                    else:
+                        assert False, 'Not support such optimizer.'
+
+                    periodical_pc = pc_ori.clone()
+
+            input_all = periodical_pc + offset
             if input_all.size(2) > cfg.npoint:
                 input_curr_iter = farthest_points_sample(input_all, cfg.npoint)
             else:
                 input_curr_iter = input_all
 
-            #input_curr_iter = input_all
-
             with torch.no_grad():
-                if input_all.size(2) > cfg.npoint:
-                    eval_points = farthest_points_sample(input_all, cfg.npoint)
-                else:
-                    eval_points = input_all
-
-                output = net(eval_points)
+                output = net(input_curr_iter)
 
                 for k in range(b):
                     output_label = torch.argmax(output[k]).item()
@@ -284,6 +307,8 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
             if cfg.is_pre_jitter_input:
                 input_all.grad = input_curr_iter.grad
             optimizer.step()
+            if cfg.is_use_lr_scheduler:
+                lr_scheduler.step()
 
             # for saving
             if (step%50 == 0) and cfg.is_debug:
@@ -295,22 +320,26 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
 
             if cfg.is_pro_grad:
                 with torch.no_grad():
-                    offset = input_all - pc_ori
+                    # offset = input_all - pc_ori
+                    # proj_offset = offset_proj(offset, pc_ori, normal_ori)
+                    # input_all.data = (pc_ori + proj_offset).data
                     proj_offset = offset_proj(offset, pc_ori, normal_ori)
-                    input_all.data = (pc_ori + proj_offset).data
-            
+                    offset.data = proj_offset.data
+
             if cfg.cc_linf != 0:
                 with torch.no_grad():
-                    offset = input_all - pc_ori
+                    # offset = input_all - pc_ori
+                    # proj_offset = lp_clip(offset, cfg.cc_linf)
+                    # input_all.data = (pc_ori + proj_offset).data
                     proj_offset = lp_clip(offset, cfg.cc_linf)
-                    input_all.data = (pc_ori + proj_offset).data
+                    offset.data = proj_offset.data
 
             # for saving
             if (step%50 == 0) and cfg.is_debug:
                 fout = open(os.path.join(saved_dir, 'Obj', str(step)+'af.xyz'), 'w')
                 k=0
-                for m in range(input_all.shape[2]):
-                    fout.write('%f %f %f %f %f %f\n' % (input_all[k, 0, m], input_all[k, 1, m], input_all[k, 2, m], normal_ori[k, 0, m], normal_ori[k, 1, m], normal_ori[k, 2, m]))
+                for m in range((periodical_pc + offset).shape[2]):
+                    fout.write('%f %f %f %f %f %f\n' % ((periodical_pc + offset)[k, 0, m], (periodical_pc + offset)[k, 1, m], (periodical_pc + offset)[k, 2, m], normal_ori[k, 0, m], normal_ori[k, 1, m], normal_ori[k, 2, m]))
                 fout.close()
 
             if cfg.is_debug:
