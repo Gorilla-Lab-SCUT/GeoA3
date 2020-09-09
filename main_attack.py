@@ -71,7 +71,7 @@ parser.add_argument('--is_partial_var', dest='is_partial_var', action='store_tru
 parser.add_argument('--knn_range', type=int, default=3, help='')
 parser.add_argument('--is_use_lr_scheduler', dest='is_use_lr_scheduler', action='store_true', default=False, help='')
 ## perturbation clip setting
-parser.add_argument('--cc_linf', type=float, default=0.1, help='Coefficient for infinity norm')
+parser.add_argument('--cc_linf', type=float, default=0.0, help='Coefficient for infinity norm')
 ## Proj offset
 parser.add_argument('--is_pro_grad', action='store_true', default=False, help='')
 ## Jitter

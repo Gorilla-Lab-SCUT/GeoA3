@@ -23,7 +23,7 @@ sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
 from utility import estimate_perpendicular, _compare, farthest_points_sample, pad_larger_tensor_with_index_batch
-from loss_utils import norm_l2_loss, chamfer_loss, hausdorff_loss, curvature_loss, uniform_loss, _get_kappa_ori, _get_kappa_adv
+from loss_utils import norm_l2_loss, chamfer_loss, pseudo_chamfer_loss, hausdorff_loss, curvature_loss, uniform_loss, _get_kappa_ori, _get_kappa_adv
 
 def resample_reconstruct_from_pc(cfg, output_file_name, pc, normal=None, reconstruct_type='PRS'):
     assert pc.size() == 2
@@ -119,19 +119,22 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_ori, ori_kappa, target, s
 
     info = 'cls_loss: {0:6.4f}\t'.format(cls_loss.mean().item())
 
-    intra_dis = ((input_curr_iter.unsqueeze(3) - pc_ori.unsqueeze(2))**2).sum(1) #b*n*n
+    #intra_dis = ((input_curr_iter.unsqueeze(3) - pc_ori.unsqueeze(2))**2).sum(1) #b*n*n
 
     if cfg.dis_loss_type == 'CD':
         if cfg.is_cd_single_side:
-            dis_loss = intra_dis.min(2)[0].mean(1)
+            #dis_loss = intra_dis.min(2)[0].mean(1)
+            dis_loss = pseudo_chamfer_loss(input_curr_iter, pc_ori)
         else:
-            dis_loss = intra_dis.min(2)[0].mean(1) + intra_dis.min(1)[0].mean(1)
+            #dis_loss = intra_dis.min(2)[0].mean(1) + intra_dis.min(1)[0].mean(1)
+            dis_loss = chamfer_loss(input_curr_iter, pc_ori)
 
         constrain_loss = cfg.dis_loss_weight * dis_loss
         info = info + 'cd_loss: {0:6.4f}\t'.format(dis_loss.mean().item())
     elif cfg.dis_loss_type == 'L2':
         assert cfg.hd_loss_weight ==0
-        dis_loss = ((input_curr_iter - pc_ori)**2).sum(1).mean(1)
+        #dis_loss = ((input_curr_iter - pc_ori)**2).sum(1).mean(1)
+        dis_loss = norm_l2_loss(input_curr_iter, pc_ori)
         constrain_loss = cfg.dis_loss_weight * dis_loss
         info = info + 'l2_loss: {0:6.4f}\t'.format(dis_loss.mean().item())
     elif cfg.dis_loss_type == 'None':
@@ -142,7 +145,8 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_ori, ori_kappa, target, s
 
     # hd_loss
     if cfg.hd_loss_weight !=0:
-        hd_loss = intra_dis.min(2)[0].max(1)[0]
+        #hd_loss = intra_dis.min(2)[0].max(1)[0]
+        hd_loss = hausdorff_loss(input_curr_iter, pc_ori)
         constrain_loss = constrain_loss + cfg.hd_loss_weight * hd_loss
         info = info+'hd_loss : {0:6.4f}\t'.format(hd_loss.mean().item())
     else:
@@ -155,6 +159,7 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_ori, ori_kappa, target, s
         constrain_loss = constrain_loss + cfg.curv_loss_weight * curv_loss
         info = info+'curv_loss : {0:6.4f}\t'.format(curv_loss.mean().item())
     else:
+        normal_curr_iter = torch.zeros(b, 3, n).cuda()
         curv_loss = 0
 
     # uniform loss
@@ -224,9 +229,9 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
         iter_best_loss = [1e10] * b
         iter_best_score = [-1] * b
         constrain_loss = torch.ones(b) * 1e10
+        input_all = None
 
         for step in range(cfg.iter_max_steps):
-
             if cfg.is_partial_var:
                 if step%50 == 0:
                     with torch.no_grad():
@@ -235,21 +240,20 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
 
                         intra_KNN = knn_points(pc_ori[:, :, init_point_idx].unsqueeze(2).permute(0,2,1), pc_ori.permute(0,2,1), K=cfg.knn_range+1) #[dists:[b,n,cfg.knn_range+1], idx:[b,n,cfg.knn_range+1]]
                     part_offset = torch.zeros(b, 3, cfg.knn_range).cuda()
-
-                    offset = pad_larger_tensor_with_index_batch(part_offset, intra_KNN.idx.tolist(), n)
-                    nn.init.normal_(offset, mean=0, std=1e-3)
-                    offset.requires_grad_()
+                    nn.init.normal_(part_offset, mean=0, std=1e-3)
+                    part_offset.requires_grad_()
 
                     if cfg.optim == 'adam':
-                        optimizer = torch.optim.Adam([offset], lr=cfg.lr)
+                        optimizer = torch.optim.Adam([part_offset], lr=cfg.lr)
                     elif cfg.optim == 'sgd':
-                        optimizer = torch.optim.SGD([offset], lr=cfg.lr, momentum=0.9)
+                        optimizer = torch.optim.SGD([part_offset], lr=cfg.lr, momentum=0.9)
                     else:
                         assert False, 'Wrong optimizer!'
+
                     lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9990, last_epoch=-1)
 
                     try:
-                        periodical_pc = input_all.clone()
+                        periodical_pc = input_all.detach().clone()
                     except:
                         periodical_pc = pc_ori.clone()
             else:
@@ -264,11 +268,15 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
                         optimizer = optim.SGD([offset], lr=cfg.lr)
                     else:
                         assert False, 'Not support such optimizer.'
+                    lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9990, last_epoch=-1)
 
                     periodical_pc = pc_ori.clone()
 
+            if cfg.is_partial_var:
+                offset = pad_larger_tensor_with_index_batch(part_offset, intra_KNN.idx.tolist(), n)
             input_all = periodical_pc + offset
-            if input_all.size(2) > cfg.npoint:
+
+            if (input_all.size(2) > cfg.npoint) and (not cfg.is_partial_var):
                 input_curr_iter = farthest_points_sample(input_all, cfg.npoint)
             else:
                 input_curr_iter = input_all
@@ -313,9 +321,9 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
             # for saving
             if (step%50 == 0) and cfg.is_debug:
                 fout = open(os.path.join(saved_dir, 'Obj', str(step)+'bf.xyz'), 'w')
-                k=0
+                k=-1
                 for m in range(input_curr_iter.shape[2]):
-                    fout.write('%f %f %f %f %f %f\n' % (input_curr_iter[k, 0, m], input_curr_iter[k, 1, m], input_curr_iter[k, 2, m], normal_curr_iter[k, 0, m], normal_curr_iter[k, 1, m], normal_curr_iter[k, 2, m]))
+                    fout.write('%f %f %f 0 0 0 %f %f %f\n' % (input_curr_iter[k, 0, m], input_curr_iter[k, 1, m], input_curr_iter[k, 2, m], normal_curr_iter[k, 0, m], normal_curr_iter[k, 1, m], normal_curr_iter[k, 2, m]))
                 fout.close()
 
             if cfg.is_pro_grad:
@@ -337,9 +345,9 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
             # for saving
             if (step%50 == 0) and cfg.is_debug:
                 fout = open(os.path.join(saved_dir, 'Obj', str(step)+'af.xyz'), 'w')
-                k=0
+                k=-1
                 for m in range((periodical_pc + offset).shape[2]):
-                    fout.write('%f %f %f %f %f %f\n' % ((periodical_pc + offset)[k, 0, m], (periodical_pc + offset)[k, 1, m], (periodical_pc + offset)[k, 2, m], normal_ori[k, 0, m], normal_ori[k, 1, m], normal_ori[k, 2, m]))
+                    fout.write('%f %f %f 0 0 0 %f %f %f\n' % ((periodical_pc + offset)[k, 0, m], (periodical_pc + offset)[k, 1, m], (periodical_pc + offset)[k, 2, m], normal_ori[k, 0, m], normal_ori[k, 1, m], normal_ori[k, 2, m]))
                 fout.close()
 
             if cfg.is_debug:

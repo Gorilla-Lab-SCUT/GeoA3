@@ -28,20 +28,27 @@ def norm_l2_loss(adv_pc, ori_pc):
 
 def chamfer_loss(adv_pc, ori_pc):
     # Chamfer distance (two sides)
-    intra_dis = ((adv_pc.unsqueeze(3) - ori_pc.unsqueeze(2))**2).sum(1)
-    dis_loss = intra_dis.min(2)[0].mean(1) + intra_dis.min(1)[0].mean(1)
+    #intra_dis = ((adv_pc.unsqueeze(3) - ori_pc.unsqueeze(2))**2).sum(1)
+    #dis_loss = intra_dis.min(2)[0].mean(1) + intra_dis.min(1)[0].mean(1)
+    adv_KNN = knn_points(adv_pc.permute(0,2,1), ori_pc.permute(0,2,1), K=1) #[dists:[b,n,1], idx:[b,n,1]]
+    ori_KNN = knn_points(ori_pc.permute(0,2,1), adv_pc.permute(0,2,1), K=1) #[dists:[b,n,1], idx:[b,n,1]]
+    dis_loss = adv_KNN.dists.contiguous().squeeze(-1).mean(-1) + ori_KNN.dists.contiguous().squeeze(-1).mean(-1) #[b]
     return dis_loss
 
 def pseudo_chamfer_loss(adv_pc, ori_pc):
     # Chamfer pseudo distance (one side)
-    intra_dis = ((adv_pc.unsqueeze(3) - ori_pc.unsqueeze(2))**2).sum(1) #b*n*n
-    dis_loss = intra_dis.min(2)[0].mean(1)
+    #intra_dis = ((adv_pc.unsqueeze(3) - ori_pc.unsqueeze(2))**2).sum(1) #b*n*n
+    #dis_loss = intra_dis.min(2)[0].mean(1)
+    adv_KNN = knn_points(adv_pc.permute(0,2,1), ori_pc.permute(0,2,1), K=1) #[dists:[b,n,1], idx:[b,n,1]]
+    dis_loss = adv_KNN.dists.contiguous().squeeze(-1).mean(-1) #[b]
     return dis_loss
 
 def hausdorff_loss(adv_pc, ori_pc):
-    dis = ((adv_pc.unsqueeze(3) - ori_pc.unsqueeze(2))**2).sum(1)
-    return torch.max(torch.min(dis, dim=2)[0], dim=1)[0]
-
+    #dis = ((adv_pc.unsqueeze(3) - ori_pc.unsqueeze(2))**2).sum(1)
+    #hd_loss = torch.max(torch.min(dis, dim=2)[0], dim=1)[0]
+    adv_KNN = knn_points(adv_pc.permute(0,2,1), ori_pc.permute(0,2,1), K=1) #[dists:[b,n,1], idx:[b,n,1]]
+    hd_loss = adv_KNN.dists.contiguous().squeeze(-1).max(-1)[0] #[b]
+    return hd_loss
 
 def _get_kappa_ori(pc, normal, k=2):
     b,_,n=pc.size()

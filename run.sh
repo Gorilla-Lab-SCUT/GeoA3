@@ -148,8 +148,8 @@ python main_attack.py --data_dir_file Data/modelnet10_250instances10000_PointNet
     --curv_loss_weight 1.0 --curv_loss_knn 16 \
     --uniform_loss_weight 5.0 \
     --is_pro_grad \
-    --cc_linf 0.1 \
+    --cc_linf 0.05 \
     --is_partial_var --knn_range 128 \
     --is_use_lr_scheduler \
-    --id 820
+    --id 830
 

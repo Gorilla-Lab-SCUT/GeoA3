@@ -19,10 +19,11 @@ def reconstruction_from_mat(input_file, reconstruct_type, save_dir, curr_idx, le
         pc = torch.FloatTensor(dataset['data'])
 
     try:
-        normal = torch.FloatTensor(dataset['est_normal'])
+        try:
+            normal = torch.FloatTensor(dataset['est_normal'])
+        except:
+            normal = torch.FloatTensor(dataset['normal'])
     except:
-        normal = torch.FloatTensor(dataset['normal'])
-    else:
         normal = None
 
 
@@ -41,7 +42,7 @@ def reconstruction_from_mat(input_file, reconstruct_type, save_dir, curr_idx, le
         normal = estimate_pointcloud_normals(pc.permute(0,2,1), neighborhood_size=8, disambiguate_directions=True).permute(0,2,1)
 
     for i in range(pc.size(0)):
-        if (os.path.join(save_dir, input_file.split("/")[-1].split(".")[0]+".obj") in os.listdir(os.path.join(save_dir))) or (os.path.join(save_dir, input_file.split("/")[-1].split(".")[0]+"_"+str(i)+".obj") in os.listdir(os.path.join(save_dir))):
+        if (input_file.split("/")[-1].split(".")[0]+".obj" in os.listdir(os.path.join(save_dir))) or (input_file.split("/")[-1].split(".")[0]+"_"+str(i)+".obj" in os.listdir(os.path.join(save_dir))):
             print('[{0}/{1}][{2}/{3}] Already exits.'.format(curr_idx, length, i+1, pc.size(0)))
             continue
         pcd = o3d.geometry.PointCloud()
