@@ -165,7 +165,7 @@ def main():
             os.makedirs(save_dir)
 
         for i, mesh_name in enumerate(file_names):
-            if "_" not in mesh_name:
+            if ("_" not in mesh_name) or (os.path.join(save_dir, mesh_name.split(".")[0]+'_mesh.obj') in os.listdir(os.path.join(save_dir))):
                 continue
             idx = mesh_name.split("_")[1]
             gt_label = int(re.findall(r"\d+\.?\d*",mesh_name.split("_")[2])[0])
@@ -184,7 +184,7 @@ def main():
                 if pred_label!=gt_label:
                     cnt_attack_success+=1
 
-                    fout = open(os.path.join(save_dir, mesh_name.split(".")[0]+'.xyz'), 'w')
+                    fout = open(os.path.join(save_dir, mesh_name.split(".")[0]+"_pre"+str(pred_label.item())+'.xyz'), 'w')
                     for m in range(curr_pc.shape[2]):
                         fout.write('%f %f %f\n' % (curr_pc[0, 0, m], curr_pc[0, 1, m], curr_pc[0, 2, m]))
                     fout.close()
@@ -193,13 +193,26 @@ def main():
                     final_verts, final_faces = mesh.get_mesh_verts_faces(0)
                     save_obj(file_name, final_verts, final_faces)
 
-                print('[{0}/{1}] of \'{2}\', pred label {3}, attack still success {4:3.2f}%'.format(i, len(file_names), mesh_name, pred_label.item(), cnt_attack_success/float(cnt_all)*100))
+                print('[{0}/{1}] of \'{2}\', pred label {3}, attack still success {4:3.2f}%'.format(i+1, len(file_names), mesh_name, pred_label.item(), cnt_attack_success/float(cnt_all)*100))
             else:
                 pass
 
     else:
+        cnt_attack_success = 0
+        cnt_all = 0
+        save_dir = cfg.save_dir or os.path.join(cfg.datadir, "../Adv_sample_from_pc")
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
         for i, pc_name in enumerate(file_names):
             if ".xyz" or ".obj" in pc_name:
+                if "_" not in pc_name:
+                    continue
+                idx = pc_name.split("_")[1]
+                gt_label = int(re.findall(r"\d+\.?\d*",pc_name.split("_")[2])[0])
+                adv_label = int(re.findall(r"\d+\.?\d*",pc_name.split("_")[3].split(".")[0])[0])
+
+                cnt_all += 1
                 curr_pc = []
                 if ".xyz" in pc_name:
                     points = read_off_lines_from_xyz(os.path.join(cfg.datadir, pc_name), cfg.npoint)
@@ -214,8 +227,15 @@ def main():
 
                 pred_label = torch.max(output_var.data.cpu(),1)[1]
 
-                print('[{0}/{1}] of \'{2}\', pred label {3}'.format(i, len(file_names), pc_name, pred_label.item()))
+                if pred_label!=gt_label:
+                    cnt_attack_success+=1
 
+                    fout = open(os.path.join(save_dir, pc_name.split(".")[0]+"_pre"+str(pred_label.item())+'.xyz'), 'w')
+                    for m in range(curr_pc.shape[2]):
+                        fout.write('%f %f %f\n' % (curr_pc[0, 0, m], curr_pc[0, 1, m], curr_pc[0, 2, m]))
+                    fout.close()
+
+                print('[{0}/{1}] of \'{2}\', pred label {3}, attack still success {4:3.2f}%'.format(i+1, len(file_names), pc_name, pred_label.item(), cnt_attack_success/float(cnt_all)*100))
                 if cfg.is_debug:
                     fout = open(os.path.join(cfg.datadir, "../Test", "curr_"+pc_name), 'w')
                     for m in range(curr_pc.shape[2]):

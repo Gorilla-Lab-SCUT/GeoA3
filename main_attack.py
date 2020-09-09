@@ -20,12 +20,13 @@ from torch.autograd.gradcheck import zero_gradients
 from Attacker import geoA3_attack, Xiang_attack, robust_attack, Liu_attack, geoA3_mesh_attack
 from Lib.utility import estimate_normal_via_ori_normal, _compare, farthest_points_sample, Count_converge_iter, Count_loss_iter, Average_meter, accuracy
 
+'''
 ten_label_indexes = [0, 2, 4, 5, 8, 22, 30, 33, 35, 37]
 ten_label_names = ['airplane', 'bed', 'bookshelf', 'bottle', 'chair', 'monitor', 'sofa', 'table', 'toilet', 'vase']
 '''
 ten_label_indexes = [17, 9, 36, 20, 3, 16, 34, 38, 23, 15]
 ten_label_names = ['airplane', 'bed', 'bookshelf', 'bottle', 'chair', 'monitor', 'sofa', 'table', 'toilet', 'vase']
-'''
+
 parser = argparse.ArgumentParser(description='Point Cloud Attacking')
 #------------Model-----------------------
 parser.add_argument('--id', type=int, default=0, help='')
