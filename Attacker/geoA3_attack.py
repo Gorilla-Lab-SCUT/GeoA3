@@ -69,7 +69,7 @@ def offset_proj(offset, ori_pc, ori_normal, project='dir'):
     normal_len_expand = normal_len.expand_as(offset) #[b, 3, n]
 
     # add 1e-6 to avoid dividing by zero
-    offset_projected = torch.sign(offset * normal) * (offset * normal / (normal_len_expand + 1e-6)).sum(1,keepdim=True) * normal / (normal_len_expand + 1e-6)
+    offset_projected = torch.sign((offset * normal).mean(1, keepdim=True)) * (offset * normal / (normal_len_expand + 1e-6)).sum(1,keepdim=True) * normal / (normal_len_expand + 1e-6)
 
     # let perturb be the projected ones
     offset = torch.where(condition_inner, offset, offset_projected)
@@ -323,7 +323,7 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
                 fout = open(os.path.join(saved_dir, 'Obj', str(step)+'bf.xyz'), 'w')
                 k=-1
                 for m in range(input_curr_iter.shape[2]):
-                    fout.write('%f %f %f 0 0 0 %f %f %f\n' % (input_curr_iter[k, 0, m], input_curr_iter[k, 1, m], input_curr_iter[k, 2, m], normal_curr_iter[k, 0, m], normal_curr_iter[k, 1, m], normal_curr_iter[k, 2, m]))
+                    fout.write('%f %f %f %f %f %f\n' % (input_curr_iter[k, 0, m], input_curr_iter[k, 1, m], input_curr_iter[k, 2, m], normal_curr_iter[k, 0, m], normal_curr_iter[k, 1, m], normal_curr_iter[k, 2, m]))
                 fout.close()
 
             if cfg.is_pro_grad:
@@ -347,7 +347,7 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
                 fout = open(os.path.join(saved_dir, 'Obj', str(step)+'af.xyz'), 'w')
                 k=-1
                 for m in range((periodical_pc + offset).shape[2]):
-                    fout.write('%f %f %f 0 0 0 %f %f %f\n' % ((periodical_pc + offset)[k, 0, m], (periodical_pc + offset)[k, 1, m], (periodical_pc + offset)[k, 2, m], normal_ori[k, 0, m], normal_ori[k, 1, m], normal_ori[k, 2, m]))
+                    fout.write('%f %f %f %f %f %f\n' % ((periodical_pc + offset)[k, 0, m], (periodical_pc + offset)[k, 1, m], (periodical_pc + offset)[k, 2, m], normal_ori[k, 0, m], normal_ori[k, 1, m], normal_ori[k, 2, m]))
                 fout.close()
 
             if cfg.is_debug:
