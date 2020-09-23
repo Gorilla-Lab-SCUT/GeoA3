@@ -73,6 +73,7 @@ parser.add_argument('--is_use_lr_scheduler', dest='is_use_lr_scheduler', action=
 ## perturbation clip setting
 parser.add_argument('--cc_linf', type=float, default=0.0, help='Coefficient for infinity norm')
 ## Proj offset
+parser.add_argument('--is_real_offset', action='store_true', default=False, help='')
 parser.add_argument('--is_pro_grad', action='store_true', default=False, help='')
 ## Jitter
 parser.add_argument('--is_pre_jitter_input', action='store_true', default=False, help='')
@@ -130,6 +131,8 @@ if cfg.attack == 'GeoA3' or cfg.attack == 'Xiang' or cfg.attack == 'RA' or cfg.a
 
         if cfg.is_pro_grad:
             saved_dir = saved_dir + '_ProGrad'
+            if cfg.is_real_offset:
+                saved_dir = saved_dir + 'RO'
 
         if cfg.cc_linf != 0:
             saved_dir = saved_dir + '_cclinf' + str(cfg.cc_linf)
@@ -161,7 +164,7 @@ print('==>Successfully created {}'.format(saved_dir))
 if cfg.attack == 'GeoA3_mesh':
     trg_dir = os.path.join(saved_dir, 'Mesh')
 else:
-    trg_dir = os.path.join(saved_dir, 'Obj')
+    trg_dir = os.path.join(saved_dir, 'PC')
 if not os.path.exists(trg_dir):
     os.makedirs(trg_dir)
 trg_dir = os.path.join(saved_dir, 'Mat')
@@ -288,10 +291,17 @@ def main():
                 dense_normal = dense_normal.view(b, 3, n).cuda()
 
         if cfg.attack is None:
-            with torch.no_grad():
-                output = net(pc)
-            acc = accuracy(output.data, gt_target.data, topk=(1, ))
-            test_acc.update(acc[0][0], output.size(0))
+            if n == 10000:
+                for i in range(b):
+                    with torch.no_grad():
+                        output = net(pc[i].unsqueeze(0))
+                    acc = accuracy(output.data, gt_target[i].data.unsqueeze(0), topk=(1, ))
+                    test_acc.update(acc[0][0], 1)
+            else:
+                with torch.no_grad():
+                    output = net(pc)
+                acc = accuracy(output.data, gt_target.data, topk=(1, ))
+                test_acc.update(acc[0][0], output.size(0))
             print("Prec@1 {top1.avg:.3f}".format(top1=test_acc))
 
         elif cfg.attack == 'GeoA3':
@@ -342,10 +352,9 @@ def main():
             saved_pc = adv_pc.cpu().clone().numpy()
 
             for k in range(b):
-                #if attack_success[k].item() and attack_success_indicator[k]:
                 if attack_success_indicator[k].item():
                     num_attack_success += 1
-                    name = 'adv_' + str(cnt_ins+k//num_attack_classes) + '_gt' + str(gt_target[k].item()) + '_attack' + str(torch.max(test_adv_output,1)[1].data[k].item())
+                    name = 'adv_' + str(cnt_ins+k//num_attack_classes) + '_gt' + str(gt_target[k].item()) + '_attack' + str(torch.max(test_adv_output,1)[1].data[k].item()) + '_expect' + str(targeted_label[k].item())
 
                     if cfg.is_save_normal:
                         sio.savemat(os.path.join(saved_dir, 'Mat', name+'.mat'),
@@ -354,7 +363,7 @@ def main():
                         sio.savemat(os.path.join(saved_dir, 'Mat', name+'.mat'),
                         {"adversary_point_clouds": saved_pc[k], 'gt_label': gt_target[k].item(), 'attack_label': torch.max(test_adv_output,1)[1].data[k].item()})
 
-                    fout = open(os.path.join(saved_dir, 'Obj', name+'.obj'), 'w')
+                    fout = open(os.path.join(saved_dir, 'PC', name+'.obj'), 'w')
                     for m in range(saved_pc.shape[2]):
                         fout.write('v %f %f %f 0 0 0\n' % (saved_pc[k, 0, m], saved_pc[k, 1, m], saved_pc[k, 2, m]))
                     fout.close()
@@ -365,7 +374,7 @@ def main():
             for k in range(b):
                 if attack_success_indicator[k].item() and best_score[k] != -1:
                     num_attack_success += 1
-                    name = 'adv_' + str(cnt_ins+k//num_attack_classes) + '_gt' + str(gt_target[k].item()) + '_attack' + str(best_score[k])
+                    name = 'adv_' + str(cnt_ins+k//num_attack_classes) + '_gt' + str(gt_target[k].item()) + '_attack' + str(best_score[k]) + '_expect' + str(targeted_label[k].item())
                     final_verts, final_faces = adv_mesh[k].get_mesh_verts_faces(0)
                     #save .mat
                     sio.savemat(os.path.join(saved_dir, 'Mat', name+'.mat'), {"vert": final_verts, "faces":final_faces})

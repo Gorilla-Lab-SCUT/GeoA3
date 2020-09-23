@@ -301,8 +301,8 @@ def read_obj(file):
             parts = [part.strip() for part in parts if part]
 
             if parts[0] == 'v':
-                assert len(parts) == 4, \
-                    'vertex should be of the form v x y z, but found %d parts instead (%s)' % (len(parts), file)
+                assert len(parts) == 4 or len(parts) == 7,\
+                    'vertex should be of the form v x y z nx ny nz, but found %d parts instead (%s)' % (len(parts), file)
                 assert parts[1] != '', 'vertex x coordinate is empty (%s)' % file
                 assert parts[2] != '', 'vertex y coordinate is empty (%s)' % file
                 assert parts[3] != '', 'vertex z coordinate is empty (%s)' % file

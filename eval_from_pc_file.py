@@ -8,8 +8,9 @@ import time
 
 import numpy as np
 import scipy.io as sio
-from pytorch3d.io import load_objs_as_meshes, save_obj
+from pytorch3d.io import load_objs_as_meshes, save_obj, load_ply
 from pytorch3d.ops import sample_points_from_meshes
+from pytorch3d.structures import Meshes
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -171,11 +172,16 @@ def main():
             gt_label = int(re.findall(r"\d+\.?\d*",mesh_name.split("_")[2])[0])
             adv_label = int(re.findall(r"\d+\.?\d*",mesh_name.split("_")[3].split(".")[0])[0])
 
-            if ".obj" in mesh_name:
+            if (".obj" in mesh_name) or (".ply" in mesh_name):
                 cnt_all += 1
-                mesh = load_objs_as_meshes([os.path.join(cfg.datadir, mesh_name)])
-                curr_pc = sample_points_from_meshes(mesh, cfg.npoint).permute(0,2,1)
+                if  (".obj" in mesh_name):
+                    mesh = load_objs_as_meshes([os.path.join(cfg.datadir, mesh_name)])
 
+                else:
+                    mesh_list = load_ply(os.path.join(cfg.datadir, mesh_name))
+                    mesh = Meshes(verts=[mesh_list[0]],  faces=[mesh_list[1]])
+
+                curr_pc = sample_points_from_meshes(mesh, cfg.npoint).permute(0,2,1)
                 pc_var = Variable(curr_pc.cuda(), requires_grad=False)
                 output_var = net(pc_var)
 

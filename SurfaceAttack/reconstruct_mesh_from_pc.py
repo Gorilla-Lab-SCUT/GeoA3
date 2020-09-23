@@ -39,7 +39,7 @@ def reconstruction_from_mat(input_file, reconstruct_type, save_dir, curr_idx, le
         if normal.size(1) == 3:
             normal = normal.permute(0,2,1)
     else:
-        normal = estimate_pointcloud_normals(pc.permute(0,2,1), neighborhood_size=8, disambiguate_directions=True).permute(0,2,1)
+        normal = estimate_pointcloud_normals(pc, neighborhood_size=8, disambiguate_directions=True)
 
     for i in range(pc.size(0)):
         if (input_file.split("/")[-1].split(".")[0]+".obj" in os.listdir(os.path.join(save_dir))) or (input_file.split("/")[-1].split(".")[0]+"_"+str(i)+".obj" in os.listdir(os.path.join(save_dir))):

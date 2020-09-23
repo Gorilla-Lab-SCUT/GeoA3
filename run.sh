@@ -87,6 +87,7 @@ python defense.py --datadir Exps/PointNetPP_npoint1024/All/Pertub_0_BiStep10_Ite
 
 
 # For DGCNN
+# python Provider/gen_data_mat.py --out_datadir ./Data -outc 10 -outn 25 --npoint 1024 --is_using_virscan --dense_npoints 10000 --arch DGCNN
 ## GeoA3 attack
 python main_attack.py --data_dir_file Data/modelnet10_250instances1024_DGCNN.mat --npoint 1024 \
     --arch DGCNN --attack GeoA3 --attack_label All \

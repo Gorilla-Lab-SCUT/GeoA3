@@ -69,12 +69,21 @@ def offset_proj(offset, ori_pc, ori_normal, project='dir'):
     normal_len_expand = normal_len.expand_as(offset) #[b, 3, n]
 
     # add 1e-6 to avoid dividing by zero
-    offset_projected = torch.sign((offset * normal).mean(1, keepdim=True)) * (offset * normal / (normal_len_expand + 1e-6)).sum(1,keepdim=True) * normal / (normal_len_expand + 1e-6)
+    offset_projected = (offset * normal / (normal_len_expand + 1e-6)).sum(1,keepdim=True) * normal / (normal_len_expand + 1e-6)
 
     # let perturb be the projected ones
     offset = torch.where(condition_inner, offset, offset_projected)
 
     return offset
+
+def find_offset(ori_pc, adv_pc):
+    intra_KNN = knn_points(adv_pc.permute(0,2,1), ori_pc.permute(0,2,1), K=1) #[dists:[b,n,1], idx:[b,n,1]]
+    knn_pc = knn_gather(ori_pc.permute(0,2,1), intra_KNN.idx).permute(0,3,1,2).squeeze(3).contiguous() # [b, 3, n]
+
+    real_offset =  adv_pc - knn_pc
+
+    return real_offset
+
 
 def lp_clip(offset, cc_linf):
     lengths = (offset**2).sum(1, keepdim=True).sqrt() #[b, 1, n]
@@ -119,21 +128,16 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_ori, ori_kappa, target, s
 
     info = 'cls_loss: {0:6.4f}\t'.format(cls_loss.mean().item())
 
-    #intra_dis = ((input_curr_iter.unsqueeze(3) - pc_ori.unsqueeze(2))**2).sum(1) #b*n*n
-
     if cfg.dis_loss_type == 'CD':
         if cfg.is_cd_single_side:
-            #dis_loss = intra_dis.min(2)[0].mean(1)
             dis_loss = pseudo_chamfer_loss(input_curr_iter, pc_ori)
         else:
-            #dis_loss = intra_dis.min(2)[0].mean(1) + intra_dis.min(1)[0].mean(1)
             dis_loss = chamfer_loss(input_curr_iter, pc_ori)
 
         constrain_loss = cfg.dis_loss_weight * dis_loss
         info = info + 'cd_loss: {0:6.4f}\t'.format(dis_loss.mean().item())
     elif cfg.dis_loss_type == 'L2':
         assert cfg.hd_loss_weight ==0
-        #dis_loss = ((input_curr_iter - pc_ori)**2).sum(1).mean(1)
         dis_loss = norm_l2_loss(input_curr_iter, pc_ori)
         constrain_loss = cfg.dis_loss_weight * dis_loss
         info = info + 'l2_loss: {0:6.4f}\t'.format(dis_loss.mean().item())
@@ -145,7 +149,6 @@ def _forward_step(net, pc_ori, input_curr_iter, normal_ori, ori_kappa, target, s
 
     # hd_loss
     if cfg.hd_loss_weight !=0:
-        #hd_loss = intra_dis.min(2)[0].max(1)[0]
         hd_loss = hausdorff_loss(input_curr_iter, pc_ori)
         constrain_loss = constrain_loss + cfg.hd_loss_weight * hd_loss
         info = info+'hd_loss : {0:6.4f}\t'.format(hd_loss.mean().item())
@@ -224,7 +227,6 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
     best_attack_step = [-1] * b
     best_attack_BS_idx = [-1] * b
     all_loss_list = [[-1] * b] * cfg.iter_max_steps
-    #dis_loss_hist = [[-1] * b] * cfg.iter_max_steps
     for search_step in range(cfg.binary_max_steps):
         iter_best_loss = [1e10] * b
         iter_best_score = [-1] * b
@@ -328,17 +330,14 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
 
             if cfg.is_pro_grad:
                 with torch.no_grad():
-                    # offset = input_all - pc_ori
-                    # proj_offset = offset_proj(offset, pc_ori, normal_ori)
-                    # input_all.data = (pc_ori + proj_offset).data
+                    if cfg.is_real_offset:
+                        offset.data = find_offset(pc_ori, periodical_pc + offset).data
+
                     proj_offset = offset_proj(offset, pc_ori, normal_ori)
                     offset.data = proj_offset.data
 
             if cfg.cc_linf != 0:
                 with torch.no_grad():
-                    # offset = input_all - pc_ori
-                    # proj_offset = lp_clip(offset, cfg.cc_linf)
-                    # input_all.data = (pc_ori + proj_offset).data
                     proj_offset = lp_clip(offset, cfg.cc_linf)
                     offset.data = proj_offset.data
 

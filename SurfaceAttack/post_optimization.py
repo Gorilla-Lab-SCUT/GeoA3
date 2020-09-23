@@ -9,7 +9,7 @@ import ipdb
 import numpy as np
 import scipy.io as sio
 from pytorch3d.io import load_objs_as_meshes, save_obj
-#from pytorch3d.loss import chamfer_distance
+from pytorch3d.loss import mesh_edge_loss, mesh_laplacian_smoothing, mesh_normal_consistency
 from pytorch3d.ops import sample_points_from_meshes
 from pytorch3d.structures import Meshes
 import torch
@@ -24,33 +24,37 @@ sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
 
 from loss_utils import chamfer_loss
-
+from utility import natural_sort
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Post optimization from original mesh to adversarial point cloud")
     #------------Path-----------------------
-    parser.add_argument('--adv_mat_path', default="Exps/PointNet_npoint1024/All/GeoA3_7_BiStep10_IterStep500_Optadam_Lr0.01_Initcons10_CE_CDLoss1.0_HDLoss0.1_CurLoss1.0_k16/Mat", type=str, help='')
-    parser.add_argument('--ori_mesh_path', default="SurfaceAttack/Ori_10000_PointNet_BPA_WT_MeshFusion_post/", type=str, help='')
+    parser.add_argument('--adv_mat_path', default="Exps/PointNet_npoint1024/All/GeoA3_7_BiStep10_IterStep500_Optadam_Lr0.01_Initcons10_CE_CDLoss1.0_HDLoss0.1_CurLoss1.0_k16/Mat/", type=str, help='')
+    parser.add_argument('--ori_mesh_path', default="Data/Ori_10000_PointNet_PSR/", type=str, help='')
     parser.add_argument('--save_dir', default=None, type=str, help='')
     #------------Opti-----------------------
     parser.add_argument('--optim', default='adam', type=str, help='adam| sgd')
     parser.add_argument('--lr', type=float, default=0.001, help='')
-    parser.add_argument('--iter_max_steps', type=int, default=5000, help='')
+    parser.add_argument('--iter_max_steps', type=int, default=1000, help='')
     parser.add_argument('--is_debug', action='store_true', default=False, help='')
     cfg  = parser.parse_args()
 
     step_print_freq = 50
     i = 0
 
-    save_dir = cfg.save_dir or os.path.join(cfg.adv_mat_path, "../Optimization_from_mat")
+    edge_loss_weight = 0.5
+    laplacian_loss_weight = 0.01
+    normal_consis_loss_weight = 0.01
+
+    save_dir = cfg.save_dir or os.path.join(cfg.adv_mat_path, "../Reconstruct_from_ori_mesh")
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
     adv_pc_file_name_list = os.listdir(cfg.adv_mat_path)
-    adv_pc_file_name_list.sort()
+    adv_pc_file_name_list = natural_sort(adv_pc_file_name_list)
 
     ori_mesh_file_name_list = os.listdir(cfg.ori_mesh_path)
-    ori_mesh_file_name_list.sort()
+    ori_mesh_file_name_list = natural_sort(ori_mesh_file_name_list)
 
     for trg_pc_file in adv_pc_file_name_list:
         i+=1
@@ -78,14 +82,15 @@ if __name__ == '__main__':
             curr_pc = sample_points_from_meshes(new_src_mesh, 10000).permute(0,2,1)
 
             #loss, _ = chamfer_distance(curr_pc, trg_pc, batch_reduction='mean')
-            loss = chamfer_loss(curr_pc, trg_pc)
+            loss = chamfer_loss(curr_pc, trg_pc) + edge_loss_weight * mesh_edge_loss(new_src_mesh) + laplacian_loss_weight * mesh_laplacian_smoothing(new_src_mesh, method="uniform") + normal_consis_loss_weight * mesh_normal_consistency(new_src_mesh)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            lr_scheduler.step()
+            if step > (cfg.iter_max_steps * 1/10):
+                lr_scheduler.step()
 
-            info = '[{0}/{1}][{2}/{3}] \t loss: {4:6.4f}\t'.format(i, adv_pc_file_name_list.__len__(), step+1, cfg.iter_max_steps, loss.item())
+            info = '[{0}/{1}][{2}/{3}] \t loss: {4:6.5f}\t'.format(i, adv_pc_file_name_list.__len__(), step+1, cfg.iter_max_steps, loss.item())
 
             if (step+1) % step_print_freq == 0 or step == cfg.iter_max_steps - 1:
                 print(info)
