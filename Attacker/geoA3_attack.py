@@ -231,6 +231,8 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
         iter_best_loss = [1e10] * b
         iter_best_score = [-1] * b
         constrain_loss = torch.ones(b) * 1e10
+        attack_success = torch.zeros(b).cuda()
+
         input_all = None
 
         for step in range(cfg.iter_max_steps):
@@ -284,18 +286,25 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
                 input_curr_iter = input_all
 
             with torch.no_grad():
-                output = net(input_curr_iter)
-
                 for k in range(b):
-                    output_label = torch.argmax(output[k]).item()
+                    if input_curr_iter.size(2) < input_all.size(2):
+                        batch_k_pc = torch.cat([input_curr_iter[k]]*cfg.eval_num)
+                        batch_k_adv_output = net(batch_k_pc)
+                        attack_success[k] = _compare(torch.max(batch_k_adv_output,1)[1].data, target[k], gt_target[k], targeted).sum() > 0.5 * cfg.eval_num
+                        output_label = torch.max(batch_k_adv_output,1)[1].mode().values.item()
+                    else:
+                        adv_output = net(input_curr_iter[k])
+                        attack_success[k] = _compare(adv_output, target[k], gt_target[k].cuda(), targeted).item()
+                        output_label = torch.argmax(adv_output[k]).item()
+
                     metric = constrain_loss[k].item()
 
-                    if _compare(output_label, target[k], gt_target[k].cuda(), targeted).item() and (metric <best_loss[k]):
+                    if attack_success[k] and (metric <best_loss[k]):
                         best_loss[k] = metric
                         best_attack[k] = input_all.data[k].clone()
                         best_attack_BS_idx[k] = search_step
                         best_attack_step[k] = step
-                    if _compare(output_label, target[k], gt_target[k].cuda(), targeted).item() and (metric <iter_best_loss[k]):
+                    if attack_success[k] and (metric <iter_best_loss[k]):
                         iter_best_loss[k] = metric
                         iter_best_score[k] = output_label
 

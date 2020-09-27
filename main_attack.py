@@ -45,6 +45,7 @@ parser.add_argument('--initial_const', type=float, default=10, help='')
 parser.add_argument('--iter_max_steps',  default=500, type=int, metavar='M', help='max steps')
 parser.add_argument('--optim', default='adam', type=str, help='adam| sgd')
 parser.add_argument('--lr', type=float, default=0.01, help='')
+parser.add_argument('--eval_num', type=int, default=1, help='')
 ## cls loss
 parser.add_argument('--cls_loss_type', default='CE', type=str, help='Margin | CE')
 parser.add_argument('--confidence', type=float, default=0, help='confidence for margin based attack method')
