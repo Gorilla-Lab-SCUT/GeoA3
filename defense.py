@@ -94,6 +94,9 @@ def main():
         assert b == 1
         cnt += 1
 
+        if adv_pc.size(2) > cfg.npoint:
+            adv_pc = adv_pc[:,:,:cfg.npoint]
+
         with torch.no_grad():
             defense_pc, num = point_removal_fn(adv_pc.cuda(), cfg.defense_type, cfg.drop_num, cfg.alpha, cfg.outlier_knn)
             defense_pc_var = Variable(defense_pc)
