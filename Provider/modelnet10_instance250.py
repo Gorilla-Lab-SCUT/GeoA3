@@ -47,7 +47,7 @@ class ModelNet40():
             self.data = data
             self.normal = normal
             self.label = label
-        elif attack_label == 'Untarget' or attack_label == 'RandomTarget' or attack_label == 'SingleLabel':
+        elif attack_label == 'Untarget' or attack_label == 'RandomTarget':
             self.start_index = 0
             self.data = data
             self.normal = normal
@@ -81,7 +81,7 @@ class ModelNet40():
             else:
                 return [pcs, normals, gt_labels, target_labels]
 
-        elif (self.attack_label == 'Untarget' or self.attack_label == 'RandomTarget' or self.attack_label == 'SingleLabel'):
+        elif (self.attack_label == 'Untarget'):
             label = self.label[index]
             gt_labels = torch.IntTensor(label).long()
 
@@ -91,6 +91,20 @@ class ModelNet40():
             normal = self.normal[index].contiguous().t()
             normals = normal.unsqueeze(0).expand(1, -1, -1)
             return [pcs, normals, gt_labels]
+
+        elif (self.attack_label == 'RandomTarget'):
+            label = self.label[index]
+            gt_labels = torch.IntTensor(label).long()
+
+            pc = self.data[index].contiguous().t()
+            pcs = pc.unsqueeze(0).expand(1, -1, -1)
+
+            normal = self.normal[index].contiguous().t()
+            normals = normal.unsqueeze(0).expand(1, -1, -1)
+
+            target_labels = torch.IntTensor([np.random.randint(40)]).long()
+
+            return [pcs, normals, gt_labels, target_labels]
 
     def __farthest_points_normalized(self, obj_points, num_points, normal):
         first = np.random.randint(len(obj_points))

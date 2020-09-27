@@ -395,7 +395,7 @@ if __name__ == '__main__':
     parser.add_argument('-b', '--batch_size', default=2, type=int, metavar='B', help='batch_size (default: 2)')
     parser.add_argument('--npoint', default=1024, type=int, help='')
     #------------Attack-----------------------
-    parser.add_argument('--attack_label', default='All', type=str, help='[All; ...; Untarget; SingleLabel; RandomTarget]')
+    parser.add_argument('--attack_label', default='All', type=str, help='[All; ...; Untarget; RandomTarget]')
     parser.add_argument('--initial_const', type=float, default=10, help='')
     parser.add_argument('--lr', type=float, default=0.01, help='')
     parser.add_argument('--optim', default='adam', type=str, help='adam| sgd')

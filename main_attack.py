@@ -250,6 +250,9 @@ def main():
     if cfg.attack_label == 'Untarget':
         targeted = False
         num_attack_classes = 1
+    elif cfg.attack_label == 'Random':
+        targeted = True
+        num_attack_classes = 1
     else:
         targeted = True
         num_attack_classes = 9
