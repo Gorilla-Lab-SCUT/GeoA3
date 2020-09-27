@@ -32,6 +32,7 @@ parser.add_argument('-c', '--classes', default=40, type=int, metavar='N', help='
 parser.add_argument('-outc', '--out_classes', default=10, type=int, metavar='N', help='')
 parser.add_argument('-outn', '--max_out_num', default=25, type=int, metavar='N', help='')
 parser.add_argument('-j', '--num_workers', default=8, type=int, metavar='N', help='number of data loading workers (default: 8)')
+parser.add_argument('--pre_trn_npoint', default=1024, type=int, metavar='N', help='')
 parser.add_argument('--npoint', default=1024, type=int, metavar='N', help='')
 parser.add_argument('--is_using_virscan', action='store_true', default=False, help='')
 parser.add_argument('--dense_npoints', default=10000, type=int, metavar='N', help='')
@@ -160,10 +161,10 @@ def farthest_points_normalized(obj_points, num_points, normal):
 def main():
     using_virscan = cfg.is_using_virscan
     # model
-    model_path = os.path.join('Pretrained', cfg.arch, str(cfg.npoint), 'model_best.pth.tar')
+    model_path = os.path.join('Pretrained', cfg.arch, str(cfg.pre_trn_npoint), 'model_best.pth.tar')
     if cfg.arch == 'PointNet':
         from PointNet import PointNet
-        net = PointNet(cfg.classes, npoint=cfg.npoint).cuda()
+        net = PointNet(cfg.classes, npoint=cfg.pre_trn_npoint).cuda()
     elif cfg.arch == 'PointNetPP':
         #from Model.PointNetPP_msg import PointNet2ClassificationMSG
         #net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
@@ -171,7 +172,7 @@ def main():
         net = PointNet2ClassificationSSG(use_xyz=True, use_normal=False).cuda()
     elif cfg.arch == 'DGCNN':
         from DGCNN import DGCNN_cls
-        net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
+        net = DGCNN_cls(k=20, emb_dims=cfg.pre_trn_npoint, dropout=0.5).cuda()
     else:
         assert False
 
