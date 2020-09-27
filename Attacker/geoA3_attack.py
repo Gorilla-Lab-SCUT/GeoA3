@@ -280,7 +280,7 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
                 offset = pad_larger_tensor_with_index_batch(part_offset, intra_KNN.idx.tolist(), n)
             input_all = periodical_pc + offset
 
-            if (input_all.size(2) > cfg.npoint) and (not cfg.is_partial_var):
+            if (input_all.size(2) > cfg.npoint) and (not cfg.is_partial_var) and cfg.is_subsample_opt:
                 input_curr_iter = farthest_points_sample(input_all, cfg.npoint)
             else:
                 input_curr_iter = input_all
