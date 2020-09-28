@@ -288,14 +288,14 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
             with torch.no_grad():
                 for k in range(b):
                     if input_curr_iter.size(2) < input_all.size(2):
-                        batch_k_pc = torch.cat([input_curr_iter[k]]*cfg.eval_num)
+                        batch_k_pc = torch.cat([input_curr_iter[k].unsqueeze(0)]*cfg.eval_num)
                         batch_k_adv_output = net(batch_k_pc)
                         attack_success[k] = _compare(torch.max(batch_k_adv_output,1)[1].data, target[k], gt_target[k], targeted).sum() > 0.5 * cfg.eval_num
                         output_label = torch.max(batch_k_adv_output,1)[1].mode().values.item()
                     else:
-                        adv_output = net(input_curr_iter[k])
-                        attack_success[k] = _compare(adv_output, target[k], gt_target[k].cuda(), targeted).item()
-                        output_label = torch.argmax(adv_output[k]).item()
+                        adv_output = net(input_curr_iter[k].unsqueeze(0))
+                        output_label = torch.argmax(adv_output).item()
+                        attack_success[k] = _compare(output_label, target[k], gt_target[k].cuda(), targeted).item()
 
                     metric = constrain_loss[k].item()
 
@@ -395,7 +395,7 @@ if __name__ == '__main__':
     parser.add_argument('-b', '--batch_size', default=2, type=int, metavar='B', help='batch_size (default: 2)')
     parser.add_argument('--npoint', default=1024, type=int, help='')
     #------------Attack-----------------------
-    parser.add_argument('--attack_label', default='All', type=str, help='[All; ...; Untarget; RandomTarget]')
+    parser.add_argument('--attack_label', default='All', type=str, help='[All; ...; Untarget; Random]')
     parser.add_argument('--initial_const', type=float, default=10, help='')
     parser.add_argument('--lr', type=float, default=0.01, help='')
     parser.add_argument('--optim', default='adam', type=str, help='adam| sgd')
