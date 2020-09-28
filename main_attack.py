@@ -406,6 +406,8 @@ def main():
 
     print('Finish!')
 
+    return saved_dir
+
 
 if __name__ == '__main__':
     main()
