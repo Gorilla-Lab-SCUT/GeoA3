@@ -2,6 +2,7 @@ import os
 import sys
 import numpy as np
 import h5py
+from random import choice
 from scipy.io import loadmat
 
 import torch
@@ -47,7 +48,7 @@ class ModelNet40():
             self.data = data
             self.normal = normal
             self.label = label
-        elif attack_label == 'Untarget' or attack_label == 'RandomTarget':
+        elif attack_label == 'Untarget' or attack_label == 'Random':
             self.start_index = 0
             self.data = data
             self.normal = normal
@@ -92,7 +93,7 @@ class ModelNet40():
             normals = normal.unsqueeze(0).expand(1, -1, -1)
             return [pcs, normals, gt_labels]
 
-        elif (self.attack_label == 'RandomTarget'):
+        elif (self.attack_label == 'Random'):
             label = self.label[index]
             gt_labels = torch.IntTensor(label).long()
 
@@ -102,7 +103,7 @@ class ModelNet40():
             normal = self.normal[index].contiguous().t()
             normals = normal.unsqueeze(0).expand(1, -1, -1)
 
-            target_labels = torch.IntTensor([np.random.randint(40)]).long()
+            target_labels = torch.IntTensor([choice([i for i in range(0,40) if i not in [gt_labels.item()]])]).long()
 
             return [pcs, normals, gt_labels, target_labels]
 
