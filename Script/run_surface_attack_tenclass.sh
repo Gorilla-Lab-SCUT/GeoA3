@@ -1,5 +1,5 @@
 function error_exit {
-  echo "$1" 1>&2
+  echo "this is ERROR" 1>&2
   exit 1
 }
 
@@ -18,6 +18,7 @@ saved_dir= python main_attack.py \
     --cc_linf 0.1 \
     --is_use_lr_scheduler \
     --id ${1} \
+    --is_partial_var \
     || error_exit "failed run main_attack.py"
 
 
