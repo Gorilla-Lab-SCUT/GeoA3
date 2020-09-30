@@ -98,6 +98,7 @@ parser.add_argument('--input_pc_dir', default=None, type=str, help='')
 #===========================================
 parser.add_argument('--datadir', default='./Vis/Post_Mesh/', type=str, metavar='DIR', help='path to dataset')
 parser.add_argument('--trg_file_path', default=None, type=str, metavar='DIR', help='path to adv dataset')
+parser.add_argument('--random_seed', default=0, type=int, help='')
 parser.add_argument('--save_dir', default=None, type=str, help='')
 parser.add_argument('--is_mesh', action='store_true', default=False, help='')
 #===========================================
@@ -144,7 +145,6 @@ parser.add_argument('--cache_capacity', type=int, default=5,
 cfg  = parser.parse_args()
 
 saved_dir = main(cfg)
-#saved_dir = 'Exps/PointNet_npoint1024/Test/GeoA3_999_BiStep5_IterStep500_Optadam_Lr0.05_Initcons500.0_CE_CDLoss1.0_HDLoss0.1_CurLoss1.0_k16_UniLoss1.0_LRExp_ProGradRO_cclinf0.1'
 saved_dir_pc= os.path.join(saved_dir, 'PC')
 
 cfg.input_pc_dir = saved_dir_pc
@@ -170,7 +170,7 @@ output_mesh_dir = os.path.join('3rdParty/points2surf/results/p2s_max_model_249',
 save_mesh_dir = os.path.join(saved_dir, 'Reconstruct_from_p2s')
 shutil.move(output_mesh_dir, save_mesh_dir)
 
-cfg.save_mesh_dir = save_mesh_dir
+cfg.datadir = save_mesh_dir
 cfg.is_mesh = True
 eval_from_pc_file(cfg)
 
