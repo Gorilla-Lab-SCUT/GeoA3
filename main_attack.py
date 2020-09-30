@@ -20,163 +20,85 @@ from torch.autograd.gradcheck import zero_gradients
 from Attacker import geoA3_attack, Xiang_attack, robust_attack, Liu_attack, geoA3_mesh_attack
 from Lib.utility import estimate_normal_via_ori_normal, _compare, farthest_points_sample, Count_converge_iter, Count_loss_iter, Average_meter, accuracy
 
-'''
-ten_label_indexes = [0, 2, 4, 5, 8, 22, 30, 33, 35, 37]
-ten_label_names = ['airplane', 'bed', 'bookshelf', 'bottle', 'chair', 'monitor', 'sofa', 'table', 'toilet', 'vase']
-'''
-ten_label_indexes = [17, 9, 36, 20, 3, 16, 34, 38, 23, 15]
-ten_label_names = ['airplane', 'bed', 'bookshelf', 'bottle', 'chair', 'monitor', 'sofa', 'table', 'toilet', 'vase']
+def main(cfg):
+    if cfg.attack_label == 'Untarget':
+        targeted = False
+    else:
+        targeted = True
 
-parser = argparse.ArgumentParser(description='Point Cloud Attacking')
-#------------Model-----------------------
-parser.add_argument('--id', type=int, default=0, help='')
-parser.add_argument('--arch', default='PointNet', type=str, metavar='ARCH', help='')
-#------------Dataset-----------------------
-parser.add_argument('--data_dir_file', default='Data/modelnet10_250instances1024_PointNet.mat', type=str, help='')
-parser.add_argument('--dense_data_dir_file', default=None, type=str, help='')
-parser.add_argument('-c', '--classes', default=40, type=int, metavar='N', help='num of classes (default: 40)')
-parser.add_argument('-b', '--batch_size', default=2, type=int, metavar='B', help='batch_size (default: 2)')
-parser.add_argument('--npoint', default=1024, type=int, help='')
-#------------Attack-----------------------
-parser.add_argument('--attack', default=None, type=str, help='GeoA3 | Xiang | RA | Liu | GeoA3_mesh')
-parser.add_argument('--attack_label', default='All', type=str, help='[All; ...; Untarget]')
-parser.add_argument('--binary_max_steps', type=int, default=10, help='')
-parser.add_argument('--initial_const', type=float, default=10, help='')
-parser.add_argument('--iter_max_steps',  default=500, type=int, metavar='M', help='max steps')
-parser.add_argument('--optim', default='adam', type=str, help='adam| sgd')
-parser.add_argument('--lr', type=float, default=0.01, help='')
-parser.add_argument('--eval_num', type=int, default=1, help='')
-## cls loss
-parser.add_argument('--cls_loss_type', default='CE', type=str, help='Margin | CE')
-parser.add_argument('--confidence', type=float, default=0, help='confidence for margin based attack method')
-## distance loss
-parser.add_argument('--dis_loss_type', default='CD', type=str, help='CD | L2 | None')
-parser.add_argument('--dis_loss_weight', type=float, default=1.0, help='')
-parser.add_argument('--is_cd_single_side', action='store_true', default=False, help='')
-## hausdorff loss
-parser.add_argument('--hd_loss_weight', type=float, default=0.1, help='')
-## normal loss
-parser.add_argument('--curv_loss_weight', type=float, default=1.0, help='')
-parser.add_argument('--curv_loss_knn', type=int, default=16, help='')
-## uniform loss
-parser.add_argument('--uniform_loss_weight', type=float, default=0.0, help='')
-## KNN smoothing loss
-parser.add_argument('--knn_smoothing_loss_weight', type=float, default=5.0, help='')
-parser.add_argument('--knn_smoothing_k', type=int, default=5, help='')
-parser.add_argument('--knn_threshold_coef', type=float, default=1.10, help='')
-## Laplacian loss for mesh
-parser.add_argument('--laplacian_loss_weight', type=float, default=0, help='')
-parser.add_argument('--edge_loss_weight', type=float, default=0, help='')
-## Mesh opt
-parser.add_argument('--is_partial_var', dest='is_partial_var', action='store_true', default=False, help='')
-parser.add_argument('--knn_range', type=int, default=3, help='')
-parser.add_argument('--is_subsample_opt', dest='is_subsample_opt', action='store_true', default=False, help='')
-parser.add_argument('--is_use_lr_scheduler', dest='is_use_lr_scheduler', action='store_true', default=False, help='')
-## perturbation clip setting
-parser.add_argument('--cc_linf', type=float, default=0.0, help='Coefficient for infinity norm')
-## Proj offset
-parser.add_argument('--is_real_offset', action='store_true', default=False, help='')
-parser.add_argument('--is_pro_grad', action='store_true', default=False, help='')
-## Jitter
-parser.add_argument('--is_pre_jitter_input', action='store_true', default=False, help='')
-parser.add_argument('--is_previous_jitter_input', action='store_true', default=False, help='')
-parser.add_argument('--calculate_project_jitter_noise_iter', default=50, type=int,help='')
-parser.add_argument('--jitter_k', type=int, default=16, help='')
-parser.add_argument('--jitter_sigma', type=float, default=0.01, help='')
-parser.add_argument('--jitter_clip', type=float, default=0.05, help='')
-## PGD-like attack
-parser.add_argument('--step_alpha', type=float, default=5, help='')
-#------------Recording settings-------
-parser.add_argument('--is_record_converged_steps', action='store_true', default=False, help='')
-parser.add_argument('--is_record_loss', action='store_true', default=False, help='')
-#------------OS-----------------------
-parser.add_argument('-j', '--num_workers', default=8, type=int, metavar='N', help='number of data loading workers (default: 8)')
-parser.add_argument('--is_save_normal', action='store_true', default=False, help='')
-parser.add_argument('--is_debug', action='store_true', default=False, help='')
-parser.add_argument('--is_low_memory', action='store_true', default=False, help='')
+    print('=>Creating dir')
+    saved_root = os.path.join('Exps', cfg.arch + '_npoint' + str(cfg.npoint))
 
-cfg  = parser.parse_args()
-print(cfg, '\n')
+    if cfg.attack == 'GeoA3' or cfg.attack == 'Xiang' or cfg.attack == 'RA' or cfg.attack == 'GeoA3_mesh':
+        saved_dir = str(cfg.attack) + '_' +  str(cfg.id) +  '_BiStep' + str(cfg.binary_max_steps) + '_IterStep' + str(cfg.iter_max_steps) + '_Opt' + cfg.optim  +  '_Lr' + str(cfg.lr) + '_Initcons' + str(cfg.initial_const) + '_' + cfg.cls_loss_type + '_' + str(cfg.dis_loss_type) + 'Loss' + str(cfg.dis_loss_weight)
 
-if cfg.attack_label == 'Untarget':
-    targeted = False
-else:
-    targeted = True
+        if cfg.attack == 'GeoA3' or cfg.attack == 'GeoA3_mesh':
+            if cfg.hd_loss_weight != 0:
+                saved_dir = saved_dir + '_HDLoss' + str(cfg.hd_loss_weight)
 
-print('=>Creating dir')
-saved_root = os.path.join('Exps', cfg.arch + '_npoint' + str(cfg.npoint))
+            if cfg.curv_loss_weight != 0:
+                saved_dir = saved_dir + '_CurLoss' + str(cfg.curv_loss_weight) + '_k' + str(cfg.curv_loss_knn)
 
-if cfg.attack == 'GeoA3' or cfg.attack == 'Xiang' or cfg.attack == 'RA' or cfg.attack == 'GeoA3_mesh':
-    saved_dir = str(cfg.attack) + '_' +  str(cfg.id) +  '_BiStep' + str(cfg.binary_max_steps) + '_IterStep' + str(cfg.iter_max_steps) + '_Opt' + cfg.optim  +  '_Lr' + str(cfg.lr) + '_Initcons' + str(cfg.initial_const) + '_' + cfg.cls_loss_type + '_' + str(cfg.dis_loss_type) + 'Loss' + str(cfg.dis_loss_weight)
+            if cfg.uniform_loss_weight != 0:
+                saved_dir = saved_dir + '_UniLoss' + str(cfg.uniform_loss_weight)
 
-    if cfg.attack == 'GeoA3' or cfg.attack == 'GeoA3_mesh':
-        if cfg.hd_loss_weight != 0:
-            saved_dir = saved_dir + '_HDLoss' + str(cfg.hd_loss_weight)
+            if cfg.laplacian_loss_weight != 0:
+                saved_dir = saved_dir + '_LapLoss' + str(cfg.laplacian_loss_weight)
 
-        if cfg.curv_loss_weight != 0:
-            saved_dir = saved_dir + '_CurLoss' + str(cfg.curv_loss_weight) + '_k' + str(cfg.curv_loss_knn)
+            if cfg.edge_loss_weight != 0:
+                saved_dir = saved_dir + '_EdgeLoss' + str(cfg.edge_loss_weight)
 
-        if cfg.uniform_loss_weight != 0:
-            saved_dir = saved_dir + '_UniLoss' + str(cfg.uniform_loss_weight)
+            if cfg.is_partial_var:
+                saved_dir = saved_dir + '_PartOpt' + '_k' + str(cfg.knn_range)
 
-        if cfg.laplacian_loss_weight != 0:
-            saved_dir = saved_dir + '_LapLoss' + str(cfg.laplacian_loss_weight)
+            if cfg.is_use_lr_scheduler:
+                saved_dir = saved_dir + '_LRExp'
 
-        if cfg.edge_loss_weight != 0:
-            saved_dir = saved_dir + '_EdgeLoss' + str(cfg.edge_loss_weight)
+            if cfg.is_pro_grad:
+                saved_dir = saved_dir + '_ProGrad'
+                if cfg.is_real_offset:
+                    saved_dir = saved_dir + 'RO'
 
-        if cfg.is_partial_var:
-            saved_dir = saved_dir + '_PartOpt' + '_k' + str(cfg.knn_range)
-
-        if cfg.is_use_lr_scheduler:
-            saved_dir = saved_dir + '_LRExp'
-
-        if cfg.is_pro_grad:
-            saved_dir = saved_dir + '_ProGrad'
-            if cfg.is_real_offset:
-                saved_dir = saved_dir + 'RO'
-
-        if cfg.cc_linf != 0:
-            saved_dir = saved_dir + '_cclinf' + str(cfg.cc_linf)
+            if cfg.cc_linf != 0:
+                saved_dir = saved_dir + '_cclinf' + str(cfg.cc_linf)
 
 
-        if cfg.is_pre_jitter_input:
-            saved_dir = saved_dir + '_PreJitter' + str(cfg.jitter_sigma) + '_' + str(cfg.jitter_clip)
-            if cfg.is_previous_jitter_input:
-                saved_dir = saved_dir + '_PreviousMethod'
-            else:
-                saved_dir = saved_dir + '_estNormalVery' + str(cfg.calculate_project_jitter_noise_iter)
+            if cfg.is_pre_jitter_input:
+                saved_dir = saved_dir + '_PreJitter' + str(cfg.jitter_sigma) + '_' + str(cfg.jitter_clip)
+                if cfg.is_previous_jitter_input:
+                    saved_dir = saved_dir + '_PreviousMethod'
+                else:
+                    saved_dir = saved_dir + '_estNormalVery' + str(cfg.calculate_project_jitter_noise_iter)
 
-    if cfg.attack == 'RA':
-        if cfg.knn_smoothing_loss_weight != 0:
-            saved_dir = saved_dir + '_KnnLoss' + str(cfg.knn_smoothing_loss_weight) + '_k' + str(cfg.knn_smoothing_k) + '_coe' + str(cfg.knn_threshold_coef)
-        if cfg.cc_linf != 0:
-            saved_dir = saved_dir + '_cclinf' + str(cfg.cc_linf)
+        if cfg.attack == 'RA':
+            if cfg.knn_smoothing_loss_weight != 0:
+                saved_dir = saved_dir + '_KnnLoss' + str(cfg.knn_smoothing_loss_weight) + '_k' + str(cfg.knn_smoothing_k) + '_coe' + str(cfg.knn_threshold_coef)
+            if cfg.cc_linf != 0:
+                saved_dir = saved_dir + '_cclinf' + str(cfg.cc_linf)
 
-elif cfg.attack == 'Liu':
-    saved_dir = str(cfg.attack) + '_' +  str(cfg.id) + '_IterStep' + str(cfg.iter_max_steps) + '_StepAlpha' + str(cfg.step_alpha)
+    elif cfg.attack == 'Liu':
+        saved_dir = str(cfg.attack) + '_' +  str(cfg.id) + '_IterStep' + str(cfg.iter_max_steps) + '_StepAlpha' + str(cfg.step_alpha)
 
-else:
-    assert cfg.attack == None
-    saved_dir = 'Evaluating_' + str(cfg.id)
+    else:
+        assert cfg.attack == None
+        saved_dir = 'Evaluating_' + str(cfg.id)
 
-saved_dir = os.path.join(saved_root, cfg.attack_label, saved_dir)
-print('==>Successfully created {}'.format(saved_dir))
+    saved_dir = os.path.join(saved_root, cfg.attack_label, saved_dir)
+    print('==>Successfully created {}'.format(saved_dir))
 
-if cfg.attack == 'GeoA3_mesh':
-    trg_dir = os.path.join(saved_dir, 'Mesh')
-else:
-    trg_dir = os.path.join(saved_dir, 'PC')
-if not os.path.exists(trg_dir):
-    os.makedirs(trg_dir)
-trg_dir = os.path.join(saved_dir, 'Mat')
-if not os.path.exists(trg_dir):
-    os.makedirs(trg_dir)
-trg_dir = os.path.join(saved_dir, 'Records')
-if not os.path.exists(trg_dir):
-    os.makedirs(trg_dir)
+    if cfg.attack == 'GeoA3_mesh':
+        trg_dir = os.path.join(saved_dir, 'Mesh')
+    else:
+        trg_dir = os.path.join(saved_dir, 'PC')
+    if not os.path.exists(trg_dir):
+        os.makedirs(trg_dir)
+    trg_dir = os.path.join(saved_dir, 'Mat')
+    if not os.path.exists(trg_dir):
+        os.makedirs(trg_dir)
+    trg_dir = os.path.join(saved_dir, 'Records')
+    if not os.path.exists(trg_dir):
+        os.makedirs(trg_dir)
 
-def main():
     if cfg.id == 0:
         seed = 0
     else:
@@ -410,4 +332,82 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    '''
+    ten_label_indexes = [0, 2, 4, 5, 8, 22, 30, 33, 35, 37]
+    ten_label_names = ['airplane', 'bed', 'bookshelf', 'bottle', 'chair', 'monitor', 'sofa', 'table', 'toilet', 'vase']
+    '''
+    ten_label_indexes = [17, 9, 36, 20, 3, 16, 34, 38, 23, 15]
+    ten_label_names = ['airplane', 'bed', 'bookshelf', 'bottle', 'chair', 'monitor', 'sofa', 'table', 'toilet', 'vase']
+
+    parser = argparse.ArgumentParser(description='Point Cloud Attacking')
+    #------------Model-----------------------
+    parser.add_argument('--id', type=int, default=0, help='')
+    parser.add_argument('--arch', default='PointNet', type=str, metavar='ARCH', help='')
+    #------------Dataset-----------------------
+    parser.add_argument('--data_dir_file', default='Data/modelnet10_250instances1024_PointNet.mat', type=str, help='')
+    parser.add_argument('--dense_data_dir_file', default=None, type=str, help='')
+    parser.add_argument('-c', '--classes', default=40, type=int, metavar='N', help='num of classes (default: 40)')
+    parser.add_argument('-b', '--batch_size', default=2, type=int, metavar='B', help='batch_size (default: 2)')
+    parser.add_argument('--npoint', default=1024, type=int, help='')
+    #------------Attack-----------------------
+    parser.add_argument('--attack', default=None, type=str, help='GeoA3 | Xiang | RA | Liu | GeoA3_mesh')
+    parser.add_argument('--attack_label', default='All', type=str, help='[All; ...; Untarget]')
+    parser.add_argument('--binary_max_steps', type=int, default=10, help='')
+    parser.add_argument('--initial_const', type=float, default=10, help='')
+    parser.add_argument('--iter_max_steps',  default=500, type=int, metavar='M', help='max steps')
+    parser.add_argument('--optim', default='adam', type=str, help='adam| sgd')
+    parser.add_argument('--lr', type=float, default=0.01, help='')
+    parser.add_argument('--eval_num', type=int, default=1, help='')
+    ## cls loss
+    parser.add_argument('--cls_loss_type', default='CE', type=str, help='Margin | CE')
+    parser.add_argument('--confidence', type=float, default=0, help='confidence for margin based attack method')
+    ## distance loss
+    parser.add_argument('--dis_loss_type', default='CD', type=str, help='CD | L2 | None')
+    parser.add_argument('--dis_loss_weight', type=float, default=1.0, help='')
+    parser.add_argument('--is_cd_single_side', action='store_true', default=False, help='')
+    ## hausdorff loss
+    parser.add_argument('--hd_loss_weight', type=float, default=0.1, help='')
+    ## normal loss
+    parser.add_argument('--curv_loss_weight', type=float, default=1.0, help='')
+    parser.add_argument('--curv_loss_knn', type=int, default=16, help='')
+    ## uniform loss
+    parser.add_argument('--uniform_loss_weight', type=float, default=0.0, help='')
+    ## KNN smoothing loss
+    parser.add_argument('--knn_smoothing_loss_weight', type=float, default=5.0, help='')
+    parser.add_argument('--knn_smoothing_k', type=int, default=5, help='')
+    parser.add_argument('--knn_threshold_coef', type=float, default=1.10, help='')
+    ## Laplacian loss for mesh
+    parser.add_argument('--laplacian_loss_weight', type=float, default=0, help='')
+    parser.add_argument('--edge_loss_weight', type=float, default=0, help='')
+    ## Mesh opt
+    parser.add_argument('--is_partial_var', dest='is_partial_var', action='store_true', default=False, help='')
+    parser.add_argument('--knn_range', type=int, default=3, help='')
+    parser.add_argument('--is_subsample_opt', dest='is_subsample_opt', action='store_true', default=False, help='')
+    parser.add_argument('--is_use_lr_scheduler', dest='is_use_lr_scheduler', action='store_true', default=False, help='')
+    ## perturbation clip setting
+    parser.add_argument('--cc_linf', type=float, default=0.0, help='Coefficient for infinity norm')
+    ## Proj offset
+    parser.add_argument('--is_real_offset', action='store_true', default=False, help='')
+    parser.add_argument('--is_pro_grad', action='store_true', default=False, help='')
+    ## Jitter
+    parser.add_argument('--is_pre_jitter_input', action='store_true', default=False, help='')
+    parser.add_argument('--is_previous_jitter_input', action='store_true', default=False, help='')
+    parser.add_argument('--calculate_project_jitter_noise_iter', default=50, type=int,help='')
+    parser.add_argument('--jitter_k', type=int, default=16, help='')
+    parser.add_argument('--jitter_sigma', type=float, default=0.01, help='')
+    parser.add_argument('--jitter_clip', type=float, default=0.05, help='')
+    ## PGD-like attack
+    parser.add_argument('--step_alpha', type=float, default=5, help='')
+    #------------Recording settings-------
+    parser.add_argument('--is_record_converged_steps', action='store_true', default=False, help='')
+    parser.add_argument('--is_record_loss', action='store_true', default=False, help='')
+    #------------OS-----------------------
+    parser.add_argument('-j', '--num_workers', default=8, type=int, metavar='N', help='number of data loading workers (default: 8)')
+    parser.add_argument('--is_save_normal', action='store_true', default=False, help='')
+    parser.add_argument('--is_debug', action='store_true', default=False, help='')
+    parser.add_argument('--is_low_memory', action='store_true', default=False, help='')
+
+    cfg  = parser.parse_args()
+    print(cfg, '\n')
+
+    main(cfg)

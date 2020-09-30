@@ -16,19 +16,6 @@ import torch.nn as nn
 from torch.autograd import Variable
 from Lib.utility import natural_sort
 
-parser = argparse.ArgumentParser(description='Evluate Single Obj File')
-parser.add_argument('--datadir', default='./Vis/Post_Mesh/', type=str, metavar='DIR', help='path to dataset')
-parser.add_argument('--trg_file_path', default=None, type=str, metavar='DIR', help='path to adv dataset')
-parser.add_argument('--save_dir', default=None, type=str, help='')
-parser.add_argument('--arch', default='PointNet', type=str, metavar='ARCH', help='')
-parser.add_argument('--npoint', default=1024, type=int, help='')
-parser.add_argument('-c', '--classes', default=40, type=int, metavar='N', help='num of classes (default: 40)')
-parser.add_argument('-j', '--num_workers', default=8, type=int, metavar='N', help='number of data loading workers (default: 8)')
-parser.add_argument('--random_seed', default=0, type=int, help='')
-parser.add_argument('--is_mesh', action='store_true', default=False, help='')
-parser.add_argument('--is_debug', action='store_true', default=False, help='')
-cfg  = parser.parse_args()
-print(cfg)
 
 type_to_index_map = {
     'night_stand': 0, 'range_hood': 1, 'plant': 2, 'chair': 3, 'tent': 4,
@@ -79,7 +66,7 @@ def pc_normalize_torch(point):
     normed_point = normed_point / scale[np.newaxis, np.newaxis]
     return normed_point
 
-def main():
+def eval_from_pc_file(cfg):
     seed = cfg.random_seed
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -252,7 +239,21 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description='Evluate Single Obj File')
+    parser.add_argument('--datadir', default='./Vis/Post_Mesh/', type=str, metavar='DIR', help='path to dataset')
+    parser.add_argument('--trg_file_path', default=None, type=str, metavar='DIR', help='path to adv dataset')
+    parser.add_argument('--save_dir', default=None, type=str, help='')
+    parser.add_argument('--arch', default='PointNet', type=str, metavar='ARCH', help='')
+    parser.add_argument('--npoint', default=1024, type=int, help='')
+    parser.add_argument('-c', '--classes', default=40, type=int, metavar='N', help='num of classes (default: 40)')
+    parser.add_argument('-j', '--num_workers', default=8, type=int, metavar='N', help='number of data loading workers (default: 8)')
+    parser.add_argument('--random_seed', default=0, type=int, help='')
+    parser.add_argument('--is_mesh', action='store_true', default=False, help='')
+    parser.add_argument('--is_debug', action='store_true', default=False, help='')
+    cfg  = parser.parse_args()
+    print(cfg)
+
+    eval_from_pc_file(cfg)
 
 
 
