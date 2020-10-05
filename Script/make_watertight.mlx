@@ -1,0 +1,13 @@
+<!DOCTYPE FilterScript>
+<FilterScript>
+ <filter name="Select small disconnected component"/>
+ <filter name="Delete Selected Faces"/>
+ <filter name="Select non Manifold Edges "/>
+ <filter name="Delete Selected Faces"/>
+ <filter name="Close Holes">
+  <Param name="MaxHoleSize" description="Max size to be closed " value="100" type="RichInt" tooltip="The size is expressed as number of edges composing the hole boundary"/>
+  <Param name="Selected" description="Close holes with selected faces" value="false" type="RichBool" tooltip="Only the holes with at least one of the boundary faces selected are closed"/>
+  <Param name="NewFaceSelected" description="Select the newly created faces" value="true" type="RichBool" tooltip="After closing a hole the faces that have been created are left selected. Any previous selection is lost. Useful for example for smoothing the newly created holes."/>
+  <Param name="SelfIntersection" description="Prevent creation of selfIntersecting faces" value="true" type="RichBool" tooltip="When closing an holes it tries to prevent the creation of faces that intersect faces adjacent to the boundary of the hole. It is an heuristic, non intersetcting hole filling can be NP-complete."/>
+ </filter>
+</FilterScript>
