@@ -70,14 +70,14 @@ def main():
     if cfg.arch == 'PointNet':
         from Model.PointNet import PointNet
         net = PointNet(cfg.classes, npoint=cfg.npoint).cuda()
-    elif cfg.arch == 'PointNetPP':
-        #from Model.PointNetPP_msg import PointNet2ClassificationMSG
-        #net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
-        from Model.PointNetPP_ssg import PointNet2ClassificationSSG
-        net = PointNet2ClassificationSSG(use_xyz=True, use_normal=False).cuda()
-    elif cfg.arch == 'DGCNN':
-        from Model.DGCNN import DGCNN_cls
-        net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
+    # elif cfg.arch == 'PointNetPP':
+    #     #from Model.PointNetPP_msg import PointNet2ClassificationMSG
+    #     #net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
+    #     from Model.PointNetPP_ssg import PointNet2ClassificationSSG
+    #     net = PointNet2ClassificationSSG(use_xyz=True, use_normal=False).cuda()
+    # elif cfg.arch == 'DGCNN':
+    #     from Model.DGCNN import DGCNN_cls
+    #     net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
     else:
         assert False, 'Not support such arch.'
 
@@ -161,8 +161,8 @@ if __name__ == '__main__':
     sys.path.append(os.path.join(ROOT_DIR, 'Model'))
     sys.path.append(os.path.join(ROOT_DIR, 'Lib'))
     sys.path.append(os.path.join(ROOT_DIR, 'Provider'))
-    from Provider.defense_modelnet10_instance250 import ModelNet40
     from Lib.loss_utils import *
+    from Provider.defense_modelnet10_instance250 import ModelNet40
 
     parser = argparse.ArgumentParser(description='Point Cloud Defense')
     #------------Dataset-----------------------

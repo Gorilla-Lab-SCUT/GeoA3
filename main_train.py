@@ -149,14 +149,14 @@ def main():
     if cfg.arch == 'PointNet':
         from Model.PointNet import PointNet
         net = PointNet(cfg.classes).cuda()
-    elif cfg.arch == 'PointNetPP':
-        #from Model.PointNetPP_msg import PointNet2ClassificationMSG
-        #net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
-        from Model.PointNetPP_ssg import PointNet2ClassificationSSG
-        net = PointNet2ClassificationSSG(use_xyz=True, use_normal=False).cuda()
-    elif cfg.arch == 'DGCNN':
-        from Model.DGCNN import DGCNN_cls
-        net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
+    # elif cfg.arch == 'PointNetPP':
+    #     #from Model.PointNetPP_msg import PointNet2ClassificationMSG
+    #     #net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
+    #     from Model.PointNetPP_ssg import PointNet2ClassificationSSG
+    #     net = PointNet2ClassificationSSG(use_xyz=True, use_normal=False).cuda()
+    # elif cfg.arch == 'DGCNN':
+    #     from Model.DGCNN import DGCNN_cls
+    #     net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
     else:
         assert False
     criterion = softmax_with_smoothing_label_loss().cuda()

@@ -8,17 +8,21 @@ import time
 
 import numpy as np
 import scipy.io as sio
-from pytorch3d.io import load_obj, save_obj
-from pytorch3d.ops import sample_points_from_meshes
-from pytorch3d.structures import Meshes
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from pytorch3d.io import load_obj, save_obj
+from pytorch3d.ops import sample_points_from_meshes
+from pytorch3d.structures import Meshes
 from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
-from Attacker import geoA3_attack, Xiang_attack, robust_attack, Liu_attack, geoA3_mesh_attack
-from Lib.utility import estimate_normal_via_ori_normal, _compare, farthest_points_sample, Count_converge_iter, Count_loss_iter, Average_meter, accuracy
+#from Attacker import geoA3_attack, Xiang_attack, robust_attack, Liu_attack, geoA3_mesh_attack
+from Attacker import geoA3_attack
+from Lib.utility import (Average_meter, Count_converge_iter, Count_loss_iter,
+                         _compare, accuracy, estimate_normal_via_ori_normal,
+                         farthest_points_sample)
+
 
 def main(cfg):
     if cfg.attack_label == 'Untarget':
@@ -109,8 +113,10 @@ def main(cfg):
 
     #data
     if cfg.attack == 'GeoA3_mesh':
-        from Provider.modelnet10_instance250_mesh import ModelNet10_250instance_mesh
-        test_dataset = ModelNet10_250instance_mesh(resume=cfg.data_dir_file, attack_label= cfg.attack_label)
+        # from Provider.modelnet10_instance250_mesh import \
+        #     ModelNet10_250instance_mesh
+        # test_dataset = ModelNet10_250instance_mesh(resume=cfg.data_dir_file, attack_label= cfg.attack_label)
+        pass
     else:
         if (str(cfg.npoint) in cfg.data_dir_file):
             resample_num = -1
@@ -138,14 +144,14 @@ def main(cfg):
     if cfg.arch == 'PointNet':
         from Model.PointNet import PointNet
         net = PointNet(cfg.classes, npoint=cfg.npoint).cuda()
-    elif cfg.arch == 'PointNetPP':
-        #from Model.PointNetPP_msg import PointNet2ClassificationMSG
-        #net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
-        from Model.PointNetPP_ssg import PointNet2ClassificationSSG
-        net = PointNet2ClassificationSSG(use_xyz=True, use_normal=False).cuda()
-    elif cfg.arch == 'DGCNN':
-        from Model.DGCNN import DGCNN_cls
-        net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
+    # elif cfg.arch == 'PointNetPP':
+    #     #from Model.PointNetPP_msg import PointNet2ClassificationMSG
+    #     #net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
+    #     from Model.PointNetPP_ssg import PointNet2ClassificationSSG
+    #     net = PointNet2ClassificationSSG(use_xyz=True, use_normal=False).cuda()
+    # elif cfg.arch == 'DGCNN':
+    #     from Model.DGCNN import DGCNN_cls
+    #     net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
     else:
         assert False, 'Not support such arch.'
 
@@ -181,10 +187,11 @@ def main(cfg):
 
     for i, data in enumerate(test_loader):
         if cfg.attack == 'GeoA3_mesh':
-            vertex, _, gt_label = data[0], data[1], data[2]
-            gt_target = gt_label.view(-1).cuda()
-            bs, l, _, _ = vertex.size()
-            b = bs*l
+            # vertex, _, gt_label = data[0], data[1], data[2]
+            # gt_target = gt_label.view(-1).cuda()
+            # bs, l, _, _ = vertex.size()
+            # b = bs*l
+            pass
         else:
             pc = data[0]
             normal = data[1]
@@ -234,18 +241,18 @@ def main(cfg):
         elif cfg.attack == 'GeoA3':
             adv_pc, targeted_label, attack_success_indicator, best_attack_step, loss = geoA3_attack.attack(net, data, cfg, i, len(test_loader), saved_dir)
             eval_num = 1
-        elif cfg.attack == 'Xiang':
-            adv_pc, targeted_label, attack_success_indicator, best_attack_step = Xiang_attack.attack(net, data, cfg, i, len(test_loader))
-            eval_num = 1
-        elif cfg.attack == 'RA':
-            adv_pc, targeted_label, attack_success_indicator, best_attack_step = robust_attack.attack(net, dense_data, cfg, i, len(test_loader))
-            eval_num = 16
-        elif cfg.attack == 'Liu':
-            adv_pc, targeted_label, attack_success_indicator, best_attack_step = Liu_attack.attack(net, data, cfg, i, len(test_loader))
-            eval_num = 1
-        elif cfg.attack == 'GeoA3_mesh':
-            adv_mesh, targeted_label, attack_success_indicator, best_attack_step, best_score = geoA3_mesh_attack.attack(net, data, cfg, i, len(test_loader), saved_dir)
-            eval_num = 1
+        # elif cfg.attack == 'Xiang':
+        #     adv_pc, targeted_label, attack_success_indicator, best_attack_step = Xiang_attack.attack(net, data, cfg, i, len(test_loader))
+        #     eval_num = 1
+        # elif cfg.attack == 'RA':
+        #     adv_pc, targeted_label, attack_success_indicator, best_attack_step = robust_attack.attack(net, dense_data, cfg, i, len(test_loader))
+        #     eval_num = 16
+        # elif cfg.attack == 'Liu':
+        #     adv_pc, targeted_label, attack_success_indicator, best_attack_step = Liu_attack.attack(net, data, cfg, i, len(test_loader))
+        #     eval_num = 1
+        # elif cfg.attack == 'GeoA3_mesh':
+        #     adv_mesh, targeted_label, attack_success_indicator, best_attack_step, best_score = geoA3_mesh_attack.attack(net, data, cfg, i, len(test_loader), saved_dir)
+        #     eval_num = 1
         else:
             assert False, "Wrong type of attack."
 
@@ -297,17 +304,17 @@ def main(cfg):
 
             cnt_ins = cnt_ins + bs
             cnt_all = cnt_all + b
-        elif cfg.attack == 'GeoA3_mesh':
-            for k in range(b):
-                if attack_success_indicator[k].item() and best_score[k] != -1:
-                    num_attack_success += 1
-                    name = 'adv_' + str(cnt_ins+k//num_attack_classes) + '_gt' + str(gt_target[k].item()) + '_attack' + str(best_score[k]) + '_expect' + str(targeted_label[k].item())
-                    final_verts, final_faces = adv_mesh[k].get_mesh_verts_faces(0)
-                    #save .mat
-                    sio.savemat(os.path.join(saved_dir, 'Mat', name+'.mat'), {"vert": final_verts, "faces":final_faces})
-                    #save .obj mesh
-                    file_name = os.path.join(saved_dir, 'Mesh', name+'.obj')
-                    save_obj(file_name, final_verts, final_faces)
+        # elif cfg.attack == 'GeoA3_mesh':
+        #     for k in range(b):
+        #         if attack_success_indicator[k].item() and best_score[k] != -1:
+        #             num_attack_success += 1
+        #             name = 'adv_' + str(cnt_ins+k//num_attack_classes) + '_gt' + str(gt_target[k].item()) + '_attack' + str(best_score[k]) + '_expect' + str(targeted_label[k].item())
+        #             final_verts, final_faces = adv_mesh[k].get_mesh_verts_faces(0)
+        #             #save .mat
+        #             sio.savemat(os.path.join(saved_dir, 'Mat', name+'.mat'), {"vert": final_verts, "faces":final_faces})
+        #             #save .obj mesh
+        #             file_name = os.path.join(saved_dir, 'Mesh', name+'.obj')
+        #             save_obj(file_name, final_verts, final_faces)
 
             cnt_ins = cnt_ins + bs
             cnt_all = cnt_all + b
