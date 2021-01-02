@@ -472,11 +472,9 @@ def pc_normalize_torch(point):
     # normalize the point and face
     with torch.no_grad():
         avg = torch.mean(point.t(), dim = 1)
-        scale = torch.max(torch.norm(point, dim = 1), dim = 0)[0]
-        #scale = torch.max(point.abs().max(0).values)
-
-    normed_point = point - avg[np.newaxis, :]
-    normed_point = normed_point / scale[np.newaxis, np.newaxis]
+        normed_point = point - avg[np.newaxis, :]
+        scale = torch.max(torch.norm(normed_point, dim = 1), dim = 0)[0]
+        normed_point = normed_point / scale[np.newaxis, np.newaxis]
     return normed_point
 
 _, term_width = os.popen('stty size', 'r').read().split()

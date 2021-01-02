@@ -288,7 +288,8 @@ def attack(net, input_data, cfg, i, loader_len, saved_dir=None):
             with torch.no_grad():
                 for k in range(b):
                     if input_curr_iter.size(2) < input_all.size(2):
-                        batch_k_pc = torch.cat([input_curr_iter[k].unsqueeze(0)]*cfg.eval_num)
+                        #batch_k_pc = torch.cat([input_curr_iter[k].unsqueeze(0)]*cfg.eval_num)
+                        batch_k_pc = farthest_points_sample(torch.cat([input_all[k].unsqueeze(0)]*cfg.eval_num), cfg.npoint)
                         batch_k_adv_output = net(batch_k_pc)
                         attack_success[k] = _compare(torch.max(batch_k_adv_output,1)[1].data, target[k], gt_target[k], targeted).sum() > 0.5 * cfg.eval_num
                         output_label = torch.max(batch_k_adv_output,1)[1].mode().values.item()

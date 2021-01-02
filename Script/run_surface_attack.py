@@ -96,14 +96,15 @@ parser.add_argument('--is_low_memory', action='store_true', default=False, help=
 #===========================================
 parser.add_argument('--input_pc_dir', default=None, type=str, help='')
 #===========================================
-parser.add_argument('--datadir', default='./Vis/Post_Mesh/', type=str, metavar='DIR', help='path to dataset')
+parser.add_argument('--datadir', default=None, type=str, metavar='DIR', help='path to dataset')
 parser.add_argument('--trg_file_path', default=None, type=str, metavar='DIR', help='path to adv dataset')
 parser.add_argument('--random_seed', default=0, type=int, help='')
 parser.add_argument('--save_dir', default=None, type=str, help='')
 parser.add_argument('--is_mesh', action='store_true', default=False, help='')
+parser.add_argument('--is_record_all', action='store_true', default=False, help='')
 #===========================================
 parser.add_argument('--indir', type=str, default='3rdParty/points2surf/datasets', help='input folder (meshes)')
-parser.add_argument('--outdir', type=str, default='3rdParty/points2surf/results',
+parser.add_argument('--outdir', type=str, default='/data/lab-wen.yuxin/3D_Adversarial_pointcloud/Mesh',
                     help='output folder (estimated point cloud properties)')
 parser.add_argument('--dataset', nargs='+', type=str, default=['testset.txt'], help='shape set file name')
 parser.add_argument('--reconstruction', type=bool, default=False, help='do reconstruction instead of evaluation')
@@ -166,7 +167,8 @@ cfg.dataset = os.path.join(data_set_substr, 'testset.txt')
 full_eval(cfg)
 
 
-output_mesh_dir = os.path.join('3rdParty/points2surf/results/p2s_max_model_249', data_set_substr, 'rec/mesh')
+#output_mesh_dir = os.path.join(cfg.outdir, 'p2s_max_model_249', data_set_substr, 'rec/mesh')
+output_mesh_dir = os.path.join(cfg.outdir, 'rec/mesh')
 save_mesh_dir = os.path.join(saved_dir, 'Reconstruct_from_p2s')
 shutil.move(output_mesh_dir, save_mesh_dir)
 

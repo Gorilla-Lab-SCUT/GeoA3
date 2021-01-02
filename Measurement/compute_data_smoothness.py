@@ -12,17 +12,36 @@ parser.add_argument('--datadir', default='Data/modelnet40_1024_processed', type=
 parser.add_argument('--k', type=int, default=16, help='')
 parser.add_argument('--k2', type=int, default=16, help='')
 parser.add_argument('--print_freq', default=50, type=int, help='')
-
+parser.add_argument('--is_not_mat', action='store_true', default=False, help='')
 cfg  = parser.parse_args()
 print(cfg)
 
-filenames = os.listdir(os.path.join(cfg.datadir, 'Mat'))
+def read_off_lines_from_xyz(path, num_points):
+    with open(path) as file:
+        vertices = []
+        if num_points == -1:
+            num_points = len(open(path,'r').readlines())
+        for i in range(num_points):
+            line = file.readline()
+            vertices.append([float(x) for x in line.split()[0:3]])
+
+    return vertices
+
+if cfg.is_not_mat:
+    filenames = os.listdir(os.path.join(cfg.datadir))
+else:
+    filenames = os.listdir(os.path.join(cfg.datadir, 'Mat'))
 k = cfg.k
 
 smoothness = []
 for i, filename in enumerate(filenames):
-    pc = torch.FloatTensor(sio.loadmat(os.path.join(cfg.datadir, 'Mat', filename))['adversary_point_clouds'])
-    pc = pc.t()
+    if cfg.is_not_mat:
+        pc = read_off_lines_from_xyz(os.path.join(cfg.datadir, filename), -1)
+        pc = torch.FloatTensor(pc[:])
+    else:
+        pc = torch.FloatTensor(sio.loadmat(os.path.join(cfg.datadir, 'Mat', filename))['adversary_point_clouds'])
+        pc = pc.t()
+
     normal = torch.FloatTensor(pc.size())
     n = pc.size(0)
 

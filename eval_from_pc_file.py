@@ -14,7 +14,7 @@ from pytorch3d.structures import Meshes
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-from Lib.utility import natural_sort
+from Lib.utility import natural_sort, pc_normalize_torch
 
 
 type_to_index_map = {
@@ -50,21 +50,6 @@ def read_off_lines_from_obj(path, num_points):
             vertices.append([float(x) for x in line.split()[1:4]])
 
     return vertices
-
-
-def pc_normalize_torch(point):
-    #point:[n,3]
-    assert len(point.size()) == 2
-    assert point.size(1) == 3
-    # normalize the point and face
-    with torch.no_grad():
-        avg = torch.mean(point.t(), dim = 1)
-        scale = torch.max(torch.norm(point, dim = 1), dim = 0)[0]
-        #scale = torch.max(point.abs().max(0).values)
-
-    normed_point = point - avg[np.newaxis, :]
-    normed_point = normed_point / scale[np.newaxis, np.newaxis]
-    return normed_point
 
 def eval_from_pc_file(cfg):
     seed = cfg.random_seed
@@ -156,8 +141,10 @@ def eval_from_pc_file(cfg):
             if ("_" not in mesh_name) or (os.path.join(save_dir, mesh_name.split(".")[0]+'_mesh.obj') in os.listdir(os.path.join(save_dir))):
                 continue
             idx = mesh_name.split("_")[1]
-            gt_label = int(re.findall(r"\d+\.?\d*",mesh_name.split("_")[2])[0])
-            adv_label = int(re.findall(r"\d+\.?\d*",mesh_name.split("_")[3].split(".")[0])[0])
+            #gt_label = int(re.findall(r"\d+\.?\d*",mesh_name.split("_")[1])[0])
+            #adv_label = int(re.findall(r"\d+\.?\d*",mesh_name.split("_")[2].split(".")[0])[0])
+            gt_label = int(mesh_name.split("gt")[1].split("_")[0])
+            adv_label = int(mesh_name.split("attack")[1].split("_")[0])
 
             if (".obj" in mesh_name) or (".ply" in mesh_name):
                 cnt_all += 1
@@ -169,17 +156,21 @@ def eval_from_pc_file(cfg):
                     mesh = Meshes(verts=[mesh_list[0]],  faces=[mesh_list[1]])
 
                 curr_pc = sample_points_from_meshes(mesh, cfg.npoint).permute(0,2,1)
-                pc_var = Variable(curr_pc.cuda(), requires_grad=False)
+                norm_curr_pc = torch.zeros(curr_pc.shape)
+                for j in range(curr_pc.size(0)):
+                    norm_curr_pc[j] = pc_normalize_torch(curr_pc[j].t()).t()
+                pc_var = Variable(norm_curr_pc.cuda(), requires_grad=False)
                 output_var = net(pc_var)
 
                 pred_label = torch.max(output_var.data.cpu(),1)[1]
 
-                if pred_label!=gt_label:
-                    cnt_attack_success+=1
+                if pred_label!=gt_label or cfg.is_record_all:
+                    if pred_label!=gt_label:
+                        cnt_attack_success+=1
 
                     fout = open(os.path.join(save_dir, mesh_name.split(".")[0]+"_pre"+str(pred_label.item())+'.xyz'), 'w')
-                    for m in range(curr_pc.shape[2]):
-                        fout.write('%f %f %f\n' % (curr_pc[0, 0, m], curr_pc[0, 1, m], curr_pc[0, 2, m]))
+                    for m in range(norm_curr_pc.shape[2]):
+                        fout.write('%f %f %f\n' % (norm_curr_pc[0, 0, m], norm_curr_pc[0, 1, m], norm_curr_pc[0, 2, m]))
                     fout.close()
 
                     file_name = open(os.path.join(save_dir, mesh_name.split(".")[0]+'_mesh.obj'), 'w')
@@ -250,6 +241,7 @@ if __name__ == '__main__':
     parser.add_argument('--random_seed', default=0, type=int, help='')
     parser.add_argument('--is_mesh', action='store_true', default=False, help='')
     parser.add_argument('--is_debug', action='store_true', default=False, help='')
+    parser.add_argument('--is_record_all', action='store_true', default=False, help='')
     cfg  = parser.parse_args()
     print(cfg)
 

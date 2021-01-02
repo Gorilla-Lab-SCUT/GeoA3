@@ -12,6 +12,8 @@ import torch.optim as optim
 from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
+from Lib.utility import farthest_points_sample
+
 
 def random_drop_fn(pc, drop_num):
     n = pc.size(2)
@@ -95,17 +97,22 @@ def main():
         cnt += 1
 
         if adv_pc.size(2) > cfg.npoint:
-            adv_pc = adv_pc[:,:,:cfg.npoint]
+            #adv_pc = adv_pc[:,:,:cfg.npoint]
+            adv_pc = farthest_points_sample(adv_pc.cuda(), cfg.npoint)
 
         with torch.no_grad():
             defense_pc, num = point_removal_fn(adv_pc.cuda(), cfg.defense_type, cfg.drop_num, cfg.alpha, cfg.outlier_knn)
             defense_pc_var = Variable(defense_pc)
             defense_output = net(defense_pc)
 
-        defense_success= torch.max(defense_output,1)[1].data.cpu() == gt_label.view(-1)
-        attack_still_success = torch.max(defense_output,1)[1].data.cpu() == attack_label.view(-1)
-        num_defense_success += defense_success.sum()
-        num_attack_still_success += attack_still_success.sum()
+        if gt_label.view(-1) == attack_label.view(-1):
+            defense_success = 1
+            attack_still_success = 0
+        else:
+            defense_success = (torch.max(defense_output,1)[1].data.cpu() == gt_label.view(-1)).sum()
+            attack_still_success = (torch.max(defense_output,1)[1].data.cpu() == attack_label.view(-1)).sum()
+        num_defense_success += defense_success
+        num_attack_still_success += attack_still_success
         num_drop_point += num
 
         saved_pc = defense_pc_var.data[0].clone().cpu().permute(1, 0).clone().numpy()
@@ -123,14 +130,15 @@ def main():
                 fout.close()
 
         if (i+1) % cfg.print_freq == 0:
-            print('[{0}/{1}]  defense acc: {2:.2f} attack success: {3:.2f} avg drop num: {4:.2f}'.format(
-                i+1, len(test_loader), num_defense_success.item()/float(cnt)*100, num_attack_still_success.item()/float(cnt)*100,num_drop_point/float(cnt)))
+            print('[{0}/{1}]  attack success: {2:.2f} still attack success: {3:.2f} avg drop num: {4:.2f}'.format(
+                i+1, len(test_loader), (1-num_defense_success.item()/float(cnt))*100, num_attack_still_success.item()/float(cnt)*100,num_drop_point/float(cnt)))
 
 
     final_acc = num_defense_success.item()/float(test_loader.dataset.__len__())*100
     final_attack_acc = num_attack_still_success.item()/float(test_loader.dataset.__len__())*100
     avg_drop_point = num_drop_point/float(test_loader.dataset.__len__())
-    print('\nfinal defense wrong: {0:.2f}\n attack success: {1:.2f}\n avg drop point: {2:.2f}'.format(100-final_acc, final_attack_acc, avg_drop_point))
+    assert 100-final_acc >= final_attack_acc, "Attack success must > or >= attack still success!"
+    print('\nfinal attack success: {0:.2f}\n still attack success: {1:.2f}\n avg drop point: {2:.2f}'.format(100-final_acc, final_attack_acc, avg_drop_point))
 
     with open(os.path.join(os.path.split(cfg.datadir)[0],  'defense_result.txt'), 'at') as f:
         if cfg.defense_type == 'rand_drop':
