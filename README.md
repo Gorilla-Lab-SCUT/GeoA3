@@ -38,10 +38,14 @@ python defense.py --datadir Exps/PointNet_npoint1024/All/Pertub_0_BiStep10_IterS
 If you use this method or this code in your paper, then please cite it:
 
 ```
-@article{wen2019geometry,
-  title={Geometry-aware Generation of Adversarial and Cooperative Point Clouds},
-  author={Wen, Yuxin and Lin, Jiehong and Chen, Ke and Jia, Kui},
-  journal={arXiv preprint arXiv:1912.11171},
-  year={2019}
+@ARTICLE{9294112,
+  author={Y. {Wen} and J. {Lin} and K. {Chen} and C. L. P. {Chen} and K. {Jia}},
+  journal={IEEE Transactions on Pattern Analysis and Machine Intelligence}, 
+  title={Geometry-Aware Generation of Adversarial Point Clouds}, 
+  year={2020},
+  volume={},
+  number={},
+  pages={1-1},
+  doi={10.1109/TPAMI.2020.3044712}
 }
 ```
