@@ -21,7 +21,7 @@ Note that `/data/modelnet40_normal_resampled/` is the path of your ModelNet40 da
 
 And then use `python attack.py` to generate adversarial point clouds:
 ```
-python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNet.mat --npoint 1024 --arch PointNet \
+python main_attack.py --data_dir_file /data/modelnet10_250instances1024_PointNet.mat --npoint 1024 --arch PointNet \
 --attack GeoA3 --attack_label All --binary_max_steps 10 --iter_max_steps 500 \
 --cls_loss_type CE --dis_loss_type CD --dis_loss_weight 1.0 --hd_loss_weight 0.1 --curv_loss_weight 1.0 --curv_loss_knn 16 \
 --lr 0.01

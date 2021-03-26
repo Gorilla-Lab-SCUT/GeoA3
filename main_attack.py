@@ -17,7 +17,6 @@ from pytorch3d.structures import Meshes
 from torch.autograd import Variable
 from torch.autograd.gradcheck import zero_gradients
 
-#from Attacker import geoA3_attack, Xiang_attack, robust_attack, Liu_attack, geoA3_mesh_attack
 from Attacker import geoA3_attack
 from Lib.utility import (Average_meter, Count_converge_iter, Count_loss_iter,
                          _compare, accuracy, estimate_normal_via_ori_normal,
@@ -25,6 +24,9 @@ from Lib.utility import (Average_meter, Count_converge_iter, Count_loss_iter,
 
 
 def main(cfg):
+    if cfg.attack == 'GeoA3_mesh':
+        assert False, 'Not uploaded yet.'
+
     if cfg.attack_label == 'Untarget':
         targeted = False
     else:
@@ -33,55 +35,45 @@ def main(cfg):
     print('=>Creating dir')
     saved_root = os.path.join('Exps', cfg.arch + '_npoint' + str(cfg.npoint))
 
-    if cfg.attack == 'GeoA3' or cfg.attack == 'Xiang' or cfg.attack == 'RA' or cfg.attack == 'GeoA3_mesh':
+    if cfg.attack == 'GeoA3' or cfg.attack == 'GeoA3_mesh':
         saved_dir = str(cfg.attack) + '_' +  str(cfg.id) +  '_BiStep' + str(cfg.binary_max_steps) + '_IterStep' + str(cfg.iter_max_steps) + '_Opt' + cfg.optim  +  '_Lr' + str(cfg.lr) + '_Initcons' + str(cfg.initial_const) + '_' + cfg.cls_loss_type + '_' + str(cfg.dis_loss_type) + 'Loss' + str(cfg.dis_loss_weight)
 
-        if cfg.attack == 'GeoA3' or cfg.attack == 'GeoA3_mesh':
-            if cfg.hd_loss_weight != 0:
-                saved_dir = saved_dir + '_HDLoss' + str(cfg.hd_loss_weight)
+        if cfg.hd_loss_weight != 0:
+            saved_dir = saved_dir + '_HDLoss' + str(cfg.hd_loss_weight)
 
-            if cfg.curv_loss_weight != 0:
-                saved_dir = saved_dir + '_CurLoss' + str(cfg.curv_loss_weight) + '_k' + str(cfg.curv_loss_knn)
+        if cfg.curv_loss_weight != 0:
+            saved_dir = saved_dir + '_CurLoss' + str(cfg.curv_loss_weight) + '_k' + str(cfg.curv_loss_knn)
 
-            if cfg.uniform_loss_weight != 0:
-                saved_dir = saved_dir + '_UniLoss' + str(cfg.uniform_loss_weight)
+        if cfg.uniform_loss_weight != 0:
+            saved_dir = saved_dir + '_UniLoss' + str(cfg.uniform_loss_weight)
 
-            if cfg.laplacian_loss_weight != 0:
-                saved_dir = saved_dir + '_LapLoss' + str(cfg.laplacian_loss_weight)
+        if cfg.laplacian_loss_weight != 0:
+            saved_dir = saved_dir + '_LapLoss' + str(cfg.laplacian_loss_weight)
 
-            if cfg.edge_loss_weight != 0:
-                saved_dir = saved_dir + '_EdgeLoss' + str(cfg.edge_loss_weight)
+        if cfg.edge_loss_weight != 0:
+            saved_dir = saved_dir + '_EdgeLoss' + str(cfg.edge_loss_weight)
 
-            if cfg.is_partial_var:
-                saved_dir = saved_dir + '_PartOpt' + '_k' + str(cfg.knn_range)
+        if cfg.is_partial_var:
+            saved_dir = saved_dir + '_PartOpt' + '_k' + str(cfg.knn_range)
 
-            if cfg.is_use_lr_scheduler:
-                saved_dir = saved_dir + '_LRExp'
+        if cfg.is_use_lr_scheduler:
+            saved_dir = saved_dir + '_LRExp'
 
-            if cfg.is_pro_grad:
-                saved_dir = saved_dir + '_ProGrad'
-                if cfg.is_real_offset:
-                    saved_dir = saved_dir + 'RO'
+        if cfg.is_pro_grad:
+            saved_dir = saved_dir + '_ProGrad'
+            if cfg.is_real_offset:
+                saved_dir = saved_dir + 'RO'
 
-            if cfg.cc_linf != 0:
-                saved_dir = saved_dir + '_cclinf' + str(cfg.cc_linf)
+        if cfg.cc_linf != 0:
+            saved_dir = saved_dir + '_cclinf' + str(cfg.cc_linf)
 
 
-            if cfg.is_pre_jitter_input:
-                saved_dir = saved_dir + '_PreJitter' + str(cfg.jitter_sigma) + '_' + str(cfg.jitter_clip)
-                if cfg.is_previous_jitter_input:
-                    saved_dir = saved_dir + '_PreviousMethod'
-                else:
-                    saved_dir = saved_dir + '_estNormalVery' + str(cfg.calculate_project_jitter_noise_iter)
-
-        if cfg.attack == 'RA':
-            if cfg.knn_smoothing_loss_weight != 0:
-                saved_dir = saved_dir + '_KnnLoss' + str(cfg.knn_smoothing_loss_weight) + '_k' + str(cfg.knn_smoothing_k) + '_coe' + str(cfg.knn_threshold_coef)
-            if cfg.cc_linf != 0:
-                saved_dir = saved_dir + '_cclinf' + str(cfg.cc_linf)
-
-    elif cfg.attack == 'Liu':
-        saved_dir = str(cfg.attack) + '_' +  str(cfg.id) + '_IterStep' + str(cfg.iter_max_steps) + '_StepAlpha' + str(cfg.step_alpha)
+        if cfg.is_pre_jitter_input:
+            saved_dir = saved_dir + '_PreJitter' + str(cfg.jitter_sigma) + '_' + str(cfg.jitter_clip)
+            if cfg.is_previous_jitter_input:
+                saved_dir = saved_dir + '_PreviousMethod'
+            else:
+                saved_dir = saved_dir + '_estNormalVery' + str(cfg.calculate_project_jitter_noise_iter)
 
     else:
         assert cfg.attack == None
@@ -113,10 +105,9 @@ def main(cfg):
 
     #data
     if cfg.attack == 'GeoA3_mesh':
-        # from Provider.modelnet10_instance250_mesh import \
-        #     ModelNet10_250instance_mesh
-        # test_dataset = ModelNet10_250instance_mesh(resume=cfg.data_dir_file, attack_label= cfg.attack_label)
-        pass
+        from Provider.modelnet10_instance250_mesh import \
+            ModelNet10_250instance_mesh
+        test_dataset = ModelNet10_250instance_mesh(resume=cfg.data_dir_file, attack_label= cfg.attack_label)
     else:
         if (str(cfg.npoint) in cfg.data_dir_file):
             resample_num = -1
@@ -144,14 +135,6 @@ def main(cfg):
     if cfg.arch == 'PointNet':
         from Model.PointNet import PointNet
         net = PointNet(cfg.classes, npoint=cfg.npoint).cuda()
-    # elif cfg.arch == 'PointNetPP':
-    #     #from Model.PointNetPP_msg import PointNet2ClassificationMSG
-    #     #net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
-    #     from Model.PointNetPP_ssg import PointNet2ClassificationSSG
-    #     net = PointNet2ClassificationSSG(use_xyz=True, use_normal=False).cuda()
-    # elif cfg.arch == 'DGCNN':
-    #     from Model.DGCNN import DGCNN_cls
-    #     net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
     else:
         assert False, 'Not support such arch.'
 
@@ -187,11 +170,10 @@ def main(cfg):
 
     for i, data in enumerate(test_loader):
         if cfg.attack == 'GeoA3_mesh':
-            # vertex, _, gt_label = data[0], data[1], data[2]
-            # gt_target = gt_label.view(-1).cuda()
-            # bs, l, _, _ = vertex.size()
-            # b = bs*l
-            pass
+            vertex, _, gt_label = data[0], data[1], data[2]
+            gt_target = gt_label.view(-1).cuda()
+            bs, l, _, _ = vertex.size()
+            b = bs*l
         else:
             pc = data[0]
             normal = data[1]
@@ -241,22 +223,13 @@ def main(cfg):
         elif cfg.attack == 'GeoA3':
             adv_pc, targeted_label, attack_success_indicator, best_attack_step, loss = geoA3_attack.attack(net, data, cfg, i, len(test_loader), saved_dir)
             eval_num = 1
-        # elif cfg.attack == 'Xiang':
-        #     adv_pc, targeted_label, attack_success_indicator, best_attack_step = Xiang_attack.attack(net, data, cfg, i, len(test_loader))
-        #     eval_num = 1
-        # elif cfg.attack == 'RA':
-        #     adv_pc, targeted_label, attack_success_indicator, best_attack_step = robust_attack.attack(net, dense_data, cfg, i, len(test_loader))
-        #     eval_num = 16
-        # elif cfg.attack == 'Liu':
-        #     adv_pc, targeted_label, attack_success_indicator, best_attack_step = Liu_attack.attack(net, data, cfg, i, len(test_loader))
-        #     eval_num = 1
-        # elif cfg.attack == 'GeoA3_mesh':
-        #     adv_mesh, targeted_label, attack_success_indicator, best_attack_step, best_score = geoA3_mesh_attack.attack(net, data, cfg, i, len(test_loader), saved_dir)
-        #     eval_num = 1
+        elif cfg.attack == 'GeoA3_mesh':
+            adv_mesh, targeted_label, attack_success_indicator, best_attack_step, best_score = geoA3_mesh_attack.attack(net, data, cfg, i, len(test_loader), saved_dir)
+            eval_num = 1
         else:
             assert False, "Wrong type of attack."
 
-        if cfg.attack == 'GeoA3' or cfg.attack == 'RA' or cfg.attack == 'Xiang' or cfg.attack == 'Liu':
+        if cfg.attack == 'GeoA3':
             if cfg.is_record_converged_steps:
                 cci.record_converge_iter(best_attack_step)
             if cfg.is_record_loss:
@@ -304,17 +277,17 @@ def main(cfg):
 
             cnt_ins = cnt_ins + bs
             cnt_all = cnt_all + b
-        # elif cfg.attack == 'GeoA3_mesh':
-        #     for k in range(b):
-        #         if attack_success_indicator[k].item() and best_score[k] != -1:
-        #             num_attack_success += 1
-        #             name = 'adv_' + str(cnt_ins+k//num_attack_classes) + '_gt' + str(gt_target[k].item()) + '_attack' + str(best_score[k]) + '_expect' + str(targeted_label[k].item())
-        #             final_verts, final_faces = adv_mesh[k].get_mesh_verts_faces(0)
-        #             #save .mat
-        #             sio.savemat(os.path.join(saved_dir, 'Mat', name+'.mat'), {"vert": final_verts, "faces":final_faces})
-        #             #save .obj mesh
-        #             file_name = os.path.join(saved_dir, 'Mesh', name+'.obj')
-        #             save_obj(file_name, final_verts, final_faces)
+        elif cfg.attack == 'GeoA3_mesh':
+            for k in range(b):
+                if attack_success_indicator[k].item() and best_score[k] != -1:
+                    num_attack_success += 1
+                    name = 'adv_' + str(cnt_ins+k//num_attack_classes) + '_gt' + str(gt_target[k].item()) + '_attack' + str(best_score[k]) + '_expect' + str(targeted_label[k].item())
+                    final_verts, final_faces = adv_mesh[k].get_mesh_verts_faces(0)
+                    #save .mat
+                    sio.savemat(os.path.join(saved_dir, 'Mat', name+'.mat'), {"vert": final_verts, "faces":final_faces})
+                    #save .obj mesh
+                    file_name = os.path.join(saved_dir, 'Mesh', name+'.obj')
+                    save_obj(file_name, final_verts, final_faces)
 
             cnt_ins = cnt_ins + bs
             cnt_all = cnt_all + b
@@ -327,7 +300,7 @@ def main(cfg):
         cli.plot_loss_iter_hist()
 
 
-    if cfg.attack == 'GeoA3' or cfg.attack == 'RA' or cfg.attack == 'Xiang' or cfg.attack == 'Liu':
+    if cfg.attack == 'GeoA3':
         print('attack success: {0:.2f}\n'.format(num_attack_success/float(cnt_all)*100))
         with open(os.path.join(saved_dir, 'attack_result.txt'), 'at') as f:
             f.write('attack success: {0:.2f}\n'.format(num_attack_success/float(cnt_all)*100))
@@ -339,25 +312,18 @@ def main(cfg):
 
 
 if __name__ == '__main__':
-    '''
-    ten_label_indexes = [0, 2, 4, 5, 8, 22, 30, 33, 35, 37]
-    ten_label_names = ['airplane', 'bed', 'bookshelf', 'bottle', 'chair', 'monitor', 'sofa', 'table', 'toilet', 'vase']
-    '''
-    ten_label_indexes = [17, 9, 36, 20, 3, 16, 34, 38, 23, 15]
-    ten_label_names = ['airplane', 'bed', 'bookshelf', 'bottle', 'chair', 'monitor', 'sofa', 'table', 'toilet', 'vase']
-
     parser = argparse.ArgumentParser(description='Point Cloud Attacking')
     #------------Model-----------------------
     parser.add_argument('--id', type=int, default=0, help='')
     parser.add_argument('--arch', default='PointNet', type=str, metavar='ARCH', help='')
     #------------Dataset-----------------------
-    parser.add_argument('--data_dir_file', default='Data/modelnet10_250instances1024_PointNet.mat', type=str, help='')
+    parser.add_argument('--data_dir_file', default='/data/modelnet10_250instances1024_PointNet.mat', type=str, help='')
     parser.add_argument('--dense_data_dir_file', default=None, type=str, help='')
     parser.add_argument('-c', '--classes', default=40, type=int, metavar='N', help='num of classes (default: 40)')
     parser.add_argument('-b', '--batch_size', default=2, type=int, metavar='B', help='batch_size (default: 2)')
     parser.add_argument('--npoint', default=1024, type=int, help='')
     #------------Attack-----------------------
-    parser.add_argument('--attack', default=None, type=str, help='GeoA3 | Xiang | RA | Liu | GeoA3_mesh')
+    parser.add_argument('--attack', default=None, type=str, help='GeoA3 | GeoA3_mesh')
     parser.add_argument('--attack_label', default='All', type=str, help='[All; ...; Untarget]')
     parser.add_argument('--binary_max_steps', type=int, default=10, help='')
     parser.add_argument('--initial_const', type=float, default=10, help='')

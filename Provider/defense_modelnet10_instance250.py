@@ -6,7 +6,6 @@ import struct
 import math
 
 import torch
-import h5py
 from torch.utils.data.dataloader import default_collate
 from scipy.io import loadmat
 

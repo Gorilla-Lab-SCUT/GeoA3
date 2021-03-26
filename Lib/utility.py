@@ -42,10 +42,6 @@ def estimate_normal(pc, k):
         # pc : [b, 3, n]
         b,_,n=pc.size()
         # get knn point set matrix
-        #dis = ((pc.unsqueeze(3) - pc.unsqueeze(2) + 1e-12)**2).sum(1).sqrt()
-        #dis, idx = torch.topk(dis, k+1, dim=2, largest=False, sorted=True)
-        #idx = idx[:, :, 1:].contiguous()    #idx:[b, n, k]
-        #nn_pts = torch.gather(pc, 2, idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)   #nn_pts:[b, 3, n, k]
         inter_KNN = knn_points(pc.permute(0,2,1), pc.permute(0,2,1), K=k+1) #[dists:[b,n,k+1], idx:[b,n,k+1]]
         nn_pts = knn_gather(pc.permute(0,2,1), inter_KNN.idx).permute(0,3,1,2)[:,:,:,1:].contiguous() # [b, 3, n ,k]
 
@@ -95,11 +91,6 @@ def estimate_normal(pc, k):
 def estimate_normal_via_ori_normal(pc_adv, pc_ori, normal_ori, k):
     # pc_adv, pc_ori, normal_ori : [b,3,n]
     b,_,n=pc_adv.size()
-    #inter_dis = ((pc_adv.unsqueeze(3) - pc_ori.unsqueeze(2))**2).sum(1)
-    #inter_value, inter_idx = torch.topk(inter_dis, k, dim=2, largest=False, sorted=True) #not the same variable, use k=k
-    #inter_value = inter_value[:, :, 0].contiguous()
-    #inter_idx = inter_idx.contiguous()
-    #normal_pts = torch.gather(normal_ori, 2, inter_idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)
     intra_KNN = knn_points(pc_adv.permute(0,2,1), pc_ori.permute(0,2,1), K=k) #[dists:[b,n,k], idx:[b,n,k]]
     inter_value = intra_KNN.dists[:, :, 0].contiguous()
     inter_idx = intra_KNN.idx.permute(0,2,1).contiguous()
@@ -126,11 +117,6 @@ def estimate_perpendicular(pc, k, sigma=0.01, clip=0.05):
     with torch.no_grad():
         # pc : [b, 3, n]
         b,_,n=pc.size()
-        # get knn point set matrix
-        #dis = ((pc.unsqueeze(3) - pc.unsqueeze(2) + 1e-12)**2).sum(1).sqrt()
-        #dis, idx = torch.topk(dis, k+1, dim=2, largest=False, sorted=True)
-        #idx = idx[:, :, 1:].contiguous()    #idx:[b, n, k]
-        #nn_pts = torch.gather(pc, 2, idx.view(b,1,n*k).expand(b,3,n*k)).view(b,3,n,k)   #nn_pts:[b, 3, n, k]
         inter_KNN = knn_points(pc.permute(0,2,1), pc.permute(0,2,1), K=k+1) #[dists:[b,n,k+1], idx:[b,n,k+1]]
         nn_pts = knn_gather(pc.permute(0,2,1), inter_KNN.idx).permute(0,3,1,2)[:,:,:,1:].contiguous() # [b, 3, n ,k]
 

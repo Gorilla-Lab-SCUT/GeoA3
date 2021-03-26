@@ -149,14 +149,6 @@ def main():
     if cfg.arch == 'PointNet':
         from Model.PointNet import PointNet
         net = PointNet(cfg.classes).cuda()
-    # elif cfg.arch == 'PointNetPP':
-    #     #from Model.PointNetPP_msg import PointNet2ClassificationMSG
-    #     #net = PointNet2ClassificationMSG(use_xyz=True, use_normal=False).cuda()
-    #     from Model.PointNetPP_ssg import PointNet2ClassificationSSG
-    #     net = PointNet2ClassificationSSG(use_xyz=True, use_normal=False).cuda()
-    # elif cfg.arch == 'DGCNN':
-    #     from Model.DGCNN import DGCNN_cls
-    #     net = DGCNN_cls(k=20, emb_dims=cfg.npoint, dropout=0.5).cuda()
     else:
         assert False
     criterion = softmax_with_smoothing_label_loss().cuda()
@@ -165,12 +157,8 @@ def main():
     for key, value in dict(net.named_parameters()).items():
         if value.requires_grad:
             params += [{'params': [value], 'lr': cfg.lr, 'weight_decay': cfg.wd}]
-    if cfg.arch == 'DGCNN':
-        assert cfg.lr == 0.1
-        optimizer = torch.optim.SGD(params, lr=cfg.lr, momentum=0.9)
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.epochs, eta_min=0.001)
-    else:
-        optimizer = torch.optim.Adam(params)
+
+    optimizer = torch.optim.Adam(params)
 
     # resume
     if cfg.resume:
@@ -221,19 +209,15 @@ def main():
             pc_var = Variable(points).cuda()
             label_var = Variable(target.long()).cuda()
 
-            if cfg.arch == 'PointNet':
-                trn_output, transform = net(pc_var)
-            else:
-                trn_output = net(pc_var)
+            trn_output, transform = net(pc_var)
 
             trn_loss = criterion(trn_output, label_var)
 
-            if cfg.arch == 'PointNet':
-                K = transform.size(1)
-                mat_diff = torch.bmm(transform, transform.permute(0, 2, 1))
-                mat_diff -= Variable(torch.eye(K).float().cuda().unsqueeze(0))
-                mat_diff_loss = torch.sum(mat_diff**2)/2
-                trn_loss = trn_loss + mat_diff_loss * 0.001
+            K = transform.size(1)
+            mat_diff = torch.bmm(transform, transform.permute(0, 2, 1))
+            mat_diff -= Variable(torch.eye(K).float().cuda().unsqueeze(0))
+            mat_diff_loss = torch.sum(mat_diff**2)/2
+            trn_loss = trn_loss + mat_diff_loss * 0.001
 
             acc = accuracy(trn_output.data, label_var.data, topk=(1, ))
             trn_losses.update(trn_loss.item(), trn_output.size(0))
@@ -254,15 +238,13 @@ def main():
 
             gc.collect()
 
-        if cfg.arch == 'DGCNN':
-            lr_scheduler.step()
-        else:
-            adjust_learning_rate(optimizer, epoch, cfg.lr)
-            if cfg.arch == 'PointNet' or cfg.arch == 'PointNetPP':
-                if cfg.mGPU>1:
-                    net.module.adjust_bn_momentum(epoch, cfg.bn_momentum)
-                else:
-                    net.adjust_bn_momentum(epoch, cfg.bn_momentum)
+
+        adjust_learning_rate(optimizer, epoch, cfg.lr)
+        if cfg.arch == 'PointNet' or cfg.arch == 'PointNetPP':
+            if cfg.mGPU>1:
+                net.module.adjust_bn_momentum(epoch, cfg.bn_momentum)
+            else:
+                net.adjust_bn_momentum(epoch, cfg.bn_momentum)
 
 
         TRAIN_DATASET.reset()

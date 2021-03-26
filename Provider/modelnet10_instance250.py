@@ -1,7 +1,6 @@
 import os
 import sys
 import numpy as np
-import h5py
 from random import choice
 from scipy.io import loadmat
 

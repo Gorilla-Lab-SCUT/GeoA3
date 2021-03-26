@@ -27,3 +27,19 @@ Attacker/geoA3_mesh_attack.py
 eval_from_pc_file.py
 
 
+# personal settings
+.vscode
+
+# Data
+Data/*
+
+.idea/*
+**/*.so
+**/__pycache__/git *
+**/__pycache__/*
+*.out
+out
+**/*.ply
+
+**/*.yml
+
