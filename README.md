@@ -13,13 +13,26 @@ This repository contains the implementation of our paper <https://arxiv.org/abs/
 * Pytorch 1.1 or higher version
 
 ## Usage
+
+### Model tranining and data preparing
 Use `python main.py` to train a new model. Here is an example settings for PointNet:
 ```
 python main_train.py --datadir /data/modelnet40_normal_resampled/ --npoint 1024 --arch PointNet --epochs 200
 ```
 Note that `/data/modelnet40_normal_resampled/` is the path of your ModelNet40 dataset. We use the dataset (ModelNet40) of [PointNet++](https://github.com/charlesq34/pointnet2) which can be download [here](https://shapenet.cs.stanford.edu/media/modelnet40_normal_resampled.zip).
 
-And then use `python attack.py` to generate adversarial point clouds:
+
+Before running the attack, you can scale down the data and involves only the instances you want to attack, here is an example:
+```
+python Provider/gen_data_mat.py --datadir /data/modelnet40_normal_resampled/ --npoint 1024 --arch PointNet --out_datadir Data/ --out_classes 10 --max_out_num 25
+```
+And then the .mat file with 250 instances from 10 different classes would be generated, of which all are correctly classified.
+
+If you DO NOT want to generate the .mat file yourself, you can download one [here](https://drive.google.com/file/d/1mFsEyvfetQDlA30pHijN3S1wAlhwuemk/view?usp=sharing), for the pretrained network provided in `Pretrained/PointNet/1024/`.
+
+
+### Attack
+Use `python attack.py` to generate adversarial point clouds:
 ```
 python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNet.mat --npoint 1024 --arch PointNet \
 --attack GeoA3 --attack_label All --binary_max_steps 10 --iter_max_steps 500 \
@@ -27,6 +40,7 @@ python main_attack.py --data_dir_file Data/modelnet10_250instances1024_PointNet.
 --lr 0.01
 ```
 
+### Defense
 `defense.py` is used for evaluating the defense results on the corresponding adversarial point clouds:
 ```
 python defense.py --datadir Exps/PointNet_npoint1024/All/Pertub_0_BiStep10_IterStep500_Optadam_Lr0.01_Initcons10_CE_CDLoss1.0_HDLoss0.1_CurLoss1.0_k16/Mat \

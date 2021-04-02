@@ -26,7 +26,7 @@ sys.path.append(os.path.join(ROOT_DIR, 'Model'))
 
 parser = argparse.ArgumentParser(description='Point Cloud Attacking')
 parser.add_argument('--datadir', default='/data/modelnet40_normal_resampled/', type=str, metavar='DIR', help='path to dataset')
-parser.add_argument('--out_datadir', default='../Data', type=str, metavar='DIR', help='path to dataset')
+parser.add_argument('--out_datadir', default='Data', type=str, metavar='DIR', help='path to dataset')
 parser.add_argument('--arch', default='PointNet', type=str, metavar='ARCH', help='')
 parser.add_argument('-c', '--classes', default=40, type=int, metavar='N', help='num of classes (default: 40)')
 parser.add_argument('-outc', '--out_classes', default=10, type=int, metavar='N', help='')
