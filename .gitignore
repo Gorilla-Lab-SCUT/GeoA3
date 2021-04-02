@@ -27,6 +27,11 @@ Attacker/geoA3_mesh_attack.py
 eval_from_pc_file.py
 
 
+# byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
 # personal settings
 .vscode
 
@@ -43,3 +48,4 @@ out
 
 **/*.yml
 
+.history

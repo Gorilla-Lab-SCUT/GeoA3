@@ -8,7 +8,7 @@ import json
 import numpy as np
 import sys
 
-from Provider import provider
+import provider
 
 def pc_normalize(pc):
     l = pc.shape[0]
