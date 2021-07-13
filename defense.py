@@ -70,6 +70,9 @@ def main():
     if cfg.arch == 'PointNet':
         from Model.PointNet import PointNet
         net = PointNet(cfg.classes, npoint=cfg.npoint).cuda()
+    elif cfg.arch == 'PointNetPP':
+        from Model.PointNetPP_ssg import PointNet2ClassificationSSG
+        net = PointNet2ClassificationSSG(use_xyz=True, use_normal=False).cuda()
     else:
         assert False, 'Not support such arch.'
 

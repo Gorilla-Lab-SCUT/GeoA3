@@ -13,12 +13,7 @@ Attacker/robust_attack.py
 Attacker/Xiang_attack.py
 
 requirements.txt
-Model/PointNetPP_ssg.py
-Model/PointNetPP_msg.py
-Model/pointnet2_ops_lib
 Model/DGCNN.py
-Pretrained/PointNetPP
-Pretrained/PointNetPP_MSG
 Pretrained/DGCNN
 
 SurfaceAttack
@@ -47,5 +42,7 @@ out
 **/*.ply
 
 **/*.yml
+
+*.mat
 
 .history
