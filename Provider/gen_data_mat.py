@@ -252,7 +252,7 @@ def main():
                     output_var = net(pc_var)
                 pred_label = torch.max(output_var.data.cpu(),1)[1]
 
-                if pred_label[0] == label:
+                if pred_label[0] == label.cpu():
                     print('[{0}/{1}] label {2}: pred successed!'.format(i, len(TEST_DATASET), label))
 
                     all_data[label].append(pc.clone())
